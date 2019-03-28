@@ -413,7 +413,7 @@ def main(args):
     # Load data for specified modalities
     train_data, test_data = load_data(args.modalities, args.data_dir)
     # setting
-    window_size = 1
+    window_size = 2
     # training data
     input_features_train, ratings_train = constructInput(train_data, channels=args.modalities, window_size=window_size)
     input_padded_train, seq_lens_train = padInput(input_features_train, args.modalities, mod_dimension)
@@ -428,7 +428,8 @@ def main(args):
     input_test = input_padded_test[args.modalities[0]]
     # construct model
     model_modalities = args.modalities
-    model = MultiCNNLSTM(device=args.device)
+    model = MultiCNNLSTM(mods=args.modalities, dims=mod_dimension, device=args.device,
+                         window_embed_size=64)
 
     criterion = nn.MSELoss(reduction='sum')
     optimizer = optim.Adam(model.parameters(), lr=args.lr, weight_decay=1e-4)

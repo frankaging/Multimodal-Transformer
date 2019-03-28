@@ -77,12 +77,13 @@ class CNN(nn.Module):
         return x_conv_out
 
 class MultiCNNLSTM(nn.Module):
-    def __init__(self, word_embed_size=300, window_embed_size=256, k=3,
+    def __init__(self, mods, dims, window_embed_size=256, k=3,
                  device=torch.device('cuda:0')):
         super(MultiCNNLSTM, self).__init__()
-        self.CNN = CNN(word_embed_size, window_embed_size, k)
+        self.element_embed_size = dims[mods[0]]
+        self.CNN = CNN(self.element_embed_size, window_embed_size, k)
         self.Highway = Highway(window_embed_size)
-        self.LSTM = NLPTransformer(window_embed_size)
+        self.LSTM = MultiLSTM(window_embed_size)
         self.dropout = nn.Dropout(p=0.3)
         # Store module in specified device (CUDA/CPU)
         self.device = (device if torch.cuda.is_available() else
