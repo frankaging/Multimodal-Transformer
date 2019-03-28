@@ -77,7 +77,7 @@ class CNN(nn.Module):
         return x_conv_out
 
 class MultiCNNLSTM(nn.Module):
-    def __init__(self, mods, dims, window_embed_size=256, k=3,
+    def __init__(self, mods, dims, window_embed_size=256, k=10,
                  device=torch.device('cuda:0')):
         super(MultiCNNLSTM, self).__init__()
         self.element_embed_size = dims[mods[0]]

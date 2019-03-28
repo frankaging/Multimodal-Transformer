@@ -80,6 +80,11 @@ def generateTrainBatch(input_data, input_target, input_length, args, batch_size=
 
         for pair in combined_rating:
             target_sort.append(pair[0])
+        print(length_sort)
+        for i in target_sort:
+            print(len(i))
+        for i in data_sort:
+            print(len(i))
 
         data_sort = torch.tensor(data_sort, dtype=torch.float)
         target_sort = torch.tensor(target_sort, dtype=torch.float)
@@ -317,7 +322,7 @@ def ratingInputHelper(input_data, window_size):
 '''
 Construct inputs for different channels: emotient, linguistic, ratings, etc..
 '''
-def constructInput(input_data, window_size=5, channels=['linguistic']):
+def constructInput(input_data, window_size, channels):
     ret_input_features = {}
     ret_ratings = []
     for data in input_data:
@@ -358,10 +363,10 @@ def padInputHelper(input_data, dim, old_version=False):
             if not old_version:
                 # window might not contain any vector due to null during this window
                 if len(wind) != 0:
-                    windNew = [padVec] * max_num_vec_in_window
+                    # windNew = [padVec] * max_num_vec_in_window
+                    # windNew[:len(wind)] = wind
                     # pad with last frame features in this window
-                    windNew[:len(wind)] = wind
-                    vidNewTmp.append(windNew)
+                    vidNewTmp.append(wind)
                     # update the pad vec to be the last avaliable vector
                 else:
                     windNew = [padVec] * max_num_vec_in_window
@@ -370,9 +375,12 @@ def padInputHelper(input_data, dim, old_version=False):
                 windNew = [padVec] * max_num_vec_in_window
                 windNew[:len(wind)] = wind
                 vidNewTmp.append(windNew)
-        vidNew = [[padVec] * max_num_vec_in_window]*max_num_windows
-        vidNew[:len(vidNewTmp)] = vidNewTmp
-        output.append(vidNew)
+        # pad the end to max_num_windows:
+        if max_num_windows > len(vid):
+            vidNewTmp.extend([[padVec] * max_num_vec_in_window]*(max_num_windows-len(vid)))
+        # vidNew = [[padVec] * max_num_vec_in_window]*max_num_windows
+        # vidNew[:len(vidNewTmp)] = vidNewTmp
+        output.append(vidNewTmp)
     return output, seq_lens
 
 '''
@@ -413,7 +421,7 @@ def main(args):
     # Load data for specified modalities
     train_data, test_data = load_data(args.modalities, args.data_dir)
     # setting
-    window_size = 2
+    window_size = 1
     # training data
     input_features_train, ratings_train = constructInput(train_data, channels=args.modalities, window_size=window_size)
     input_padded_train, seq_lens_train = padInput(input_features_train, args.modalities, mod_dimension)
@@ -429,7 +437,7 @@ def main(args):
     # construct model
     model_modalities = args.modalities
     model = MultiCNNLSTM(mods=args.modalities, dims=mod_dimension, device=args.device,
-                         window_embed_size=64)
+                         window_embed_size=256)
 
     criterion = nn.MSELoss(reduction='sum')
     optimizer = optim.Adam(model.parameters(), lr=args.lr, weight_decay=1e-4)
@@ -472,7 +480,7 @@ if __name__ == "__main__":
                         help='sections to split each video into (default: 1)')
     parser.add_argument('--epochs', type=int, default=3000, metavar='N',
                         help='number of epochs to train (default: 1000)')
-    parser.add_argument('--lr', type=float, default=1e-4, metavar='LR',
+    parser.add_argument('--lr', type=float, default=1e-5, metavar='LR',
                         help='learning rate (default: 1e-6)')
     parser.add_argument('--sup_ratio', type=float, default=0.5, metavar='F',
                         help='teacher-forcing ratio (default: 0.5)')
