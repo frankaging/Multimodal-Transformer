@@ -72,7 +72,7 @@ class CNN(nn.Module):
         x_conv = self.conv1d(x_reshape) # (batch_size, window_embed_size, m_word+k+1)
         # x_conv_relu = nn.functional.relu(x_conv)
         L = x_conv.size()[2]
-        maxpool = nn.MaxPool1d(L, stride=3)
+        maxpool = nn.MaxPool1d(L, stride=5)
         x_conv_out = torch.squeeze(maxpool(x_conv), 2) # (batch_size, window_embed_size)
         return x_conv_out
 
@@ -83,7 +83,7 @@ class MultiCNNLSTM(nn.Module):
         self.element_embed_size = dims[mods[0]]
         self.CNN = CNN(self.element_embed_size, window_embed_size, k)
         self.Highway = Highway(window_embed_size)
-        self.LSTM = MultiLSTM(window_embed_size)
+        self.LSTM = NLPTransformer(window_embed_size)
         self.dropout = nn.Dropout(p=0.3)
         # Store module in specified device (CUDA/CPU)
         self.device = (device if torch.cuda.is_available() else

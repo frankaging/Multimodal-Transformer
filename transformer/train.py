@@ -80,11 +80,6 @@ def generateTrainBatch(input_data, input_target, input_length, args, batch_size=
 
         for pair in combined_rating:
             target_sort.append(pair[0])
-        print(length_sort)
-        for i in target_sort:
-            print(len(i))
-        for i in data_sort:
-            print(len(i))
 
         data_sort = torch.tensor(data_sort, dtype=torch.float)
         target_sort = torch.tensor(target_sort, dtype=torch.float)
@@ -363,10 +358,10 @@ def padInputHelper(input_data, dim, old_version=False):
             if not old_version:
                 # window might not contain any vector due to null during this window
                 if len(wind) != 0:
-                    # windNew = [padVec] * max_num_vec_in_window
-                    # windNew[:len(wind)] = wind
+                    windNew = [padVec] * max_num_vec_in_window
                     # pad with last frame features in this window
-                    vidNewTmp.append(wind)
+                    windNew[:len(wind)] = wind
+                    vidNewTmp.append(windNew)
                     # update the pad vec to be the last avaliable vector
                 else:
                     windNew = [padVec] * max_num_vec_in_window
@@ -375,12 +370,9 @@ def padInputHelper(input_data, dim, old_version=False):
                 windNew = [padVec] * max_num_vec_in_window
                 windNew[:len(wind)] = wind
                 vidNewTmp.append(windNew)
-        # pad the end to max_num_windows:
-        if max_num_windows > len(vid):
-            vidNewTmp.extend([[padVec] * max_num_vec_in_window]*(max_num_windows-len(vid)))
-        # vidNew = [[padVec] * max_num_vec_in_window]*max_num_windows
-        # vidNew[:len(vidNewTmp)] = vidNewTmp
-        output.append(vidNewTmp)
+        vidNew = [[padVec] * max_num_vec_in_window]*max_num_windows
+        vidNew[:len(vidNewTmp)] = vidNewTmp
+        output.append(vidNew)
     return output, seq_lens
 
 '''
@@ -480,7 +472,7 @@ if __name__ == "__main__":
                         help='sections to split each video into (default: 1)')
     parser.add_argument('--epochs', type=int, default=3000, metavar='N',
                         help='number of epochs to train (default: 1000)')
-    parser.add_argument('--lr', type=float, default=1e-5, metavar='LR',
+    parser.add_argument('--lr', type=float, default=1e-3, metavar='LR',
                         help='learning rate (default: 1e-6)')
     parser.add_argument('--sup_ratio', type=float, default=0.5, metavar='F',
                         help='teacher-forcing ratio (default: 0.5)')
