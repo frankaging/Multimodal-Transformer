@@ -77,18 +77,28 @@ class CNN(nn.Module):
         return x_conv_out
 
 class MultiCNNLSTM(nn.Module):
-    def __init__(self, mods, word_embed_sizeL=300, word_embed_sizeA=988,
-                 word_embed_sizeE=20, window_embed_size=128, k=5,
+    def __init__(self, mods, 
+                 word_embed_sizeL=300, word_embed_sizeA=988, word_embed_sizeE=20, 
+                 cnn_embed_sizeL=128, cnn_embed_sizeA=128, cnn_embed_sizeE=128,
+                 window_embed_size=128,
+                 kL=3, kA=2, kE=3,
                  device=torch.device('cuda:0')):
         super(MultiCNNLSTM, self).__init__()
         self.mods = mods
-        self.CNN_L = CNN(word_embed_sizeL, window_embed_size, k)
-        self.CNN_A = CNN(word_embed_sizeA, window_embed_size, k)
-        self.CNN_E = CNN(word_embed_sizeE, 15, 5)
-        self.Highway_L = Highway(window_embed_size)
-        self.Highway_A = Highway(window_embed_size)
-        self.Highway_E = Highway(15)
-        self.LSTM = NLPTransformer(window_embed_size)
+        self.CNN_L = CNN(word_embed_sizeL, cnn_embed_sizeL, kL)
+        self.CNN_A = CNN(word_embed_sizeA, cnn_embed_sizeA, kA)
+        self.CNN_E = CNN(word_embed_sizeE, cnn_embed_sizeE, kE)
+        self.Highway_L = Highway(cnn_embed_sizeL)
+        self.Highway_A = Highway(cnn_embed_sizeA)
+        self.Highway_E = Highway(cnn_embed_sizeE)
+        LSTM_EMB = 0
+        if 'linguistic' in self.mods:
+            LSTM_EMB += cnn_embed_sizeL
+        if 'acoustic' in self.mods:
+            LSTM_EMB += cnn_embed_sizeA
+        if 'emotient' in self.mods:
+            LSTM_EMB += cnn_embed_sizeE
+        self.LSTM = NLPTransformer(LSTM_EMB)
         self.dropout = nn.Dropout(p=0.3)
         # Store module in specified device (CUDA/CPU)
         self.device = (device if torch.cuda.is_available() else
@@ -135,17 +145,18 @@ class MultiCNNLSTM(nn.Module):
                 x = torch.squeeze(x, 0) # input -> (39, 33, 300)
                 # print(x.size())
                 cnnOut = self.CNN_E(x.permute(0, 2, 1)) # -> (39, 128)
-                # print(cnnOut)
                 x_highway = self.Highway_E(cnnOut)
                 x_word_emb = self.dropout(x_highway)
                 combined_outputs_E.append(x_word_emb)
             combined_outputs_E = torch.stack(combined_outputs_E, dim=0) # -> (batch_size, seq_l, 128)
             combined_outputs.append(combined_outputs_E)
+            # print(combined_outputs_E)
         if len(combined_outputs) > 1:
             combined_outputs = torch.cat(combined_outputs, 2)
         else:
             combined_outputs = combined_outputs[0]
-        # print(combined_outputs.size())
+        # print(combined_outputs_L)
+        # print(combined_outputs)
         predict = self.LSTM(combined_outputs, mask, length)
         return predict
 

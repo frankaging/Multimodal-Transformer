@@ -38,3 +38,6 @@ Thumbs.db
 
 data/
 transformer/lstm_save/
+data_hidden/
+transformer/__pycache__/
+.dropbox

@@ -137,7 +137,7 @@ class NLPTransformer(nn.Module):
         ff = PositionwiseFeedForward(embed_dim, d_ff, dropout)
         self.encoder = Encoder(EncoderLayer(embed_dim, c(attn), c(ff), dropout), N)
         # Decodes targets and LSTM hidden states
-        self.decoder = nn.LSTM(1+embed_dim, embed_dim, n_layers, batch_first=True)
+        self.decoder = nn.LSTM(2*embed_dim, embed_dim, n_layers, batch_first=True)
         self.dec_h0 = nn.Parameter(torch.zeros(n_layers, 1, embed_dim))
         self.dec_c0 = nn.Parameter(torch.zeros(n_layers, 1, embed_dim))
         # the output will be in the embed_dim dimension
@@ -161,15 +161,15 @@ class NLPTransformer(nn.Module):
         h0 = self.dec_h0.repeat(1, batch_size, 1)
         c0 = self.dec_c0.repeat(1, batch_size, 1)
         predicted = []
-        p = torch.ones(batch_size, 1).to(self.device) * tgt_init
-        # o_prev = torch.zeros(batch_size, self.embed_dim).to(self.device)
+        # p = torch.ones(batch_size, 1).to(self.device) * tgt_init
+        o_prev = torch.zeros(batch_size, self.embed_dim).to(self.device)
         h, c = h0, c0
         for t in range(seq_len):
             # Concatenate prediction from previous timestep to context
-            i = torch.cat([p, encoder_output[:,t,:]], dim=1).unsqueeze(1)
+            i = torch.cat([o_prev, encoder_output[:,t,:]], dim=1).unsqueeze(1)
             # Get next decoder LSTM state and output
             o, (h, c) = self.decoder(i, (h, c))
-            # o_prev = o.squeeze(1)
+            o_prev = o.squeeze(1)
             # Computer prediction from output state
             p = self.out(o.view(-1, self.embed_dim))
             predicted.append(p.unsqueeze(1))

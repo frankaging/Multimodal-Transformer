@@ -242,6 +242,7 @@ def load_dataset(modalities, base_dir, subset,
         'linguistic': os.path.join(base_dir, 'features', subset, 'linguistic-word-level'),
         'linguistic_timer': os.path.join(base_dir, 'features', subset, 'linguistic-word-level'),
         'ratings' : os.path.join(base_dir, 'ratings', subset, 'observer_avg'),
+        'ratings_timer' : os.path.join(base_dir, 'ratings', subset, 'observer_avg'),
         'acoustic': os.path.join(base_dir, 'features', subset, 'acoustic'),
         'acoustic_timer': os.path.join(base_dir, 'features', subset, 'acoustic'),
         'emotient': os.path.join(base_dir, 'features', subset, 'emotient'),
@@ -251,6 +252,7 @@ def load_dataset(modalities, base_dir, subset,
         'linguistic': "ID(\d+)_vid(\d+)_.*\.tsv",
         'linguistic_timer': "ID(\d+)_vid(\d+)_.*\.tsv",
         'ratings' : "results_(\d+)_(\d+)\.csv",
+        'ratings_timer' : "results_(\d+)_(\d+)\.csv",
         'acoustic': "ID(\d+)_vid(\d+)_.*\.csv",
         'acoustic_timer': "ID(\d+)_vid(\d+)_.*\.csv",
         'emotient': "ID(\d+)_vid(\d+)_.*\.txt",
@@ -263,26 +265,16 @@ def load_dataset(modalities, base_dir, subset,
         # 'emotient_timer': lambda df : df.loc[:,['Frametime']],
         'linguistic': lambda df : df.loc[:,'glove0':'glove299'],
         'ratings' : lambda df : df.drop(columns=['time']) / 100.0,
+        'ratings_timer' : lambda df : df.loc[:,['time']],
         'acoustic': lambda df : df.drop(columns=['frameIndex', ' frameTime']),
-        'emotient': lambda df : (df.set_index('Frametime')\
-                                 .reindex(
-                                     np.arange(0.0333667,
-                                               max(df['Frametime']),
-                                               0.0333667),
-                                     axis='index', method='nearest',
-                                     tolerance=1e-3, fill_value=0)\
-                                 .reset_index().loc[:,'AU1':'AU43']),
-        'emotient_timer': lambda df : (df.set_index('Frametime')\
-                                 .reindex(
-                                     np.arange(0.0333667,
-                                               max(df['Frametime']),
-                                               0.0333667),
-                                     axis='index', method='nearest',
-                                     tolerance=1e-3, fill_value=0)\
-                                 .reset_index().loc[:,'Frametime'])
+        'emotient': lambda df : df.loc[:,'AU1':'AU43'],
+        # BUG: fill value = 0 is not correct here for the Frametime, check it again
+        'emotient_timer': lambda df : df.loc[:,'Frametime']
     }
     if 'ratings' not in modalities:
         modalities = modalities + ['ratings']
+    if 'ratings_timer' not in modalities:
+        modalities = modalities + ['ratings_timer']
     if 'linguistic_timer' not in modalities:
         modalities = modalities + ['linguistic_timer']
     if 'acoustic_timer' not in modalities:

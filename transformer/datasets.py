@@ -241,55 +241,37 @@ def load_dataset(modalities, base_dir, subset,
     dirs = {
         'linguistic': os.path.join(base_dir, 'features', subset, 'linguistic-word-level'),
         'linguistic_timer': os.path.join(base_dir, 'features', subset, 'linguistic-word-level'),
-        'ratings' : os.path.join(base_dir, 'ratings', subset, 'observer_avg'),
-        'acoustic': os.path.join(base_dir, 'features', subset, 'acoustic'),
-        'acoustic_timer': os.path.join(base_dir, 'features', subset, 'acoustic'),
         'emotient': os.path.join(base_dir, 'features', subset, 'emotient'),
-        'emotient_timer': os.path.join(base_dir, 'features', subset, 'emotient')
+        'emotient_timer': os.path.join(base_dir, 'features', subset, 'emotient'),
+        'ratings' : os.path.join(base_dir, 'ratings', subset, 'observer_avg'),
+        'ratings_timer' : os.path.join(base_dir, 'ratings', subset, 'observer_avg'),
     }
     regex = {
         'linguistic': "ID(\d+)_vid(\d+)_.*\.tsv",
         'linguistic_timer': "ID(\d+)_vid(\d+)_.*\.tsv",
-        'ratings' : "results_(\d+)_(\d+)\.csv",
-        'acoustic': "ID(\d+)_vid(\d+)_.*\.csv",
-        'acoustic_timer': "ID(\d+)_vid(\d+)_.*\.csv",
         'emotient': "ID(\d+)_vid(\d+)_.*\.txt",
-        'emotient_timer': "ID(\d+)_vid(\d+)_.*\.txt"
+        'emotient_timer': "ID(\d+)_vid(\d+)_.*\.txt",
+        'ratings' : "results_(\d+)_(\d+)\.csv",
+        'ratings_timer' : "results_(\d+)_(\d+)\.csv"
     }
-    rates = {'acoustic': 2, 'linguistic': 2, 'emotient': 30, 'ratings': 2, 'linguistic_timer' : 2, 'acoustic_timer' : 2, 'emotient_timer' : 30}
+    rates = {'acoustic': 2, 'linguistic': 2, 'emotient': 30, 'emotient_timer': 30, 'ratings': 2, 'linguistic_timer' : 2}
     preprocess = {
-        'linguistic_timer': lambda df : df.loc[:,['time-onset','time-offset']],
-        'acoustic_timer': lambda df : df.loc[:,[' frameTime']],
-        # 'emotient_timer': lambda df : df.loc[:,['Frametime']],
+        'linguistic_timer': lambda df : df.loc[:,'time-offset'],
         'linguistic': lambda df : df.loc[:,'glove0':'glove299'],
+        'emotient_timer': lambda df : df.loc[:,'Frametime'],
+        'emotient': lambda df : df.loc[:,'AU1':'AU43'],
         'ratings' : lambda df : df.drop(columns=['time']) / 100.0,
-        'acoustic': lambda df : df.drop(columns=['frameIndex', ' frameTime']),
-        'emotient': lambda df : (df.set_index('Frametime')\
-                                 .reindex(
-                                     np.arange(0.0333667,
-                                               max(df['Frametime']),
-                                               0.0333667),
-                                     axis='index', method='nearest',
-                                     tolerance=1e-3, fill_value=0)\
-                                 .reset_index().loc[:,'AU1':'AU43']),
-        # BUG: fill value = 0 is not correct here for the Frametime, check it again
-        'emotient_timer': lambda df : (df.set_index('Frametime')\
-                                 .reindex(
-                                     np.arange(0.0333667,
-                                               max(df['Frametime']),
-                                               0.0333667),
-                                     axis='index', method='nearest',
-                                     tolerance=1e-3, fill_value=0)\
-                                 .reset_index().loc[:,'Frametime'])
+        'ratings_timer' : lambda df : df.loc[:,'time'],
     }
     if 'ratings' not in modalities:
         modalities = modalities + ['ratings']
-    if 'linguistic_timer' not in modalities:
-        modalities = modalities + ['linguistic_timer']
-    if 'acoustic_timer' not in modalities:
-        modalities = modalities + ['acoustic_timer']
-    if 'emotient_timer' not in modalities:
+    if 'ratings_timer' not in modalities:
+        modalities = modalities + ['ratings_timer']
+    if 'emotient' in modalities:
         modalities = modalities + ['emotient_timer']
+    if 'linguistic' in modalities:
+        modalities = modalities + ['linguistic_timer']
+
     return MultiseqDataset(modalities, [dirs[m] for m in modalities],
                            [regex[m] for m in modalities],
                            [preprocess[m] for m in modalities],

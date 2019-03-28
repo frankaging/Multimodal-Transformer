@@ -77,34 +77,122 @@ class CNN(nn.Module):
         return x_conv_out
 
 class MultiCNNLSTM(nn.Module):
-    def __init__(self, word_embed_size=300, window_embed_size=256, k=3,
+    def __init__(self, mods, 
+                 word_embed_sizeL=300, word_embed_sizeA=988, word_embed_sizeE=20, cnn_rnn_embedE=128, 
+                 cnn_embed_sizeL=128, cnn_embed_sizeA=256, cnn_embed_sizeE=64,
+                 window_embed_size=128,
+                 kL=5, kA=10, kE=3,
                  device=torch.device('cuda:0')):
         super(MultiCNNLSTM, self).__init__()
-        self.CNN = CNN(word_embed_size, window_embed_size, k)
-        self.Highway = Highway(window_embed_size)
-        self.LSTM = NLPTransformer(window_embed_size)
+        self.mods = mods
+        self.CNN_L = CNN(word_embed_sizeL, cnn_embed_sizeL, kL)
+        self.CNN_A = CNN(word_embed_sizeA, cnn_embed_sizeA, kA)
+        self.CNN_RNN = nn.LSTM(word_embed_sizeE, cnn_rnn_embedE, 1, batch_first=True)
+        self.CNN_E = CNN(cnn_rnn_embedE, cnn_embed_sizeE, kE)
+        self.Highway_L = Highway(cnn_embed_sizeL)
+        self.Highway_A = Highway(cnn_embed_sizeA)
+        self.Highway_E = Highway(cnn_embed_sizeE)
+        LSTM_EMB = 0
+        if 'linguistic' in self.mods:
+            LSTM_EMB += cnn_embed_sizeL
+        if 'acoustic' in self.mods:
+            LSTM_EMB += cnn_embed_sizeA
+        if 'emotient' in self.mods:
+            LSTM_EMB += cnn_embed_sizeE
+
+        self.LSTM = NLPTransformer(LSTM_EMB)
         self.dropout = nn.Dropout(p=0.3)
         # Store module in specified device (CUDA/CPU)
         self.device = (device if torch.cuda.is_available() else
                        torch.device('cpu'))
         self.to(self.device)
 
-    def forward(self, inputs, length, mask=None):
+    def forward(self, inputs, length, window_length_sort, mask=None):
         '''
         inputs = (batch_size, 39, 33, 300)
         '''
         # print(inputs[0])
         combined_outputs = []
-        for x in torch.split(inputs, 1, 0):
-            x = torch.squeeze(x, 0) # input -> (39, 33, 300)
-            # print(x.size())
-            cnnOut = self.CNN(x.permute(0, 2, 1)) # -> (39, 128)
-            # print(cnnOut)
-            x_highway = self.Highway(cnnOut)
-            x_word_emb = self.dropout(x_highway)
-            combined_outputs.append(x_word_emb)
-        combined_outputs = torch.stack(combined_outputs, dim=0) # -> (batch_size, 39, 128)
+        if 'linguistic' in self.mods:
+            # print("!")
+            combined_outputs_L = []
+            for x in torch.split(inputs[0], 1, 0):
+                x = torch.squeeze(x, 0) # input -> (39, 33, 300)
+                # print(x.size())
+                cnnOut = self.CNN_L(x.permute(0, 2, 1)) # -> (39, 128)
+                # print(cnnOut)
+                x_highway = self.Highway_L(cnnOut)
+                x_word_emb = self.dropout(x_highway)
+                combined_outputs_L.append(x_word_emb)
+            combined_outputs_L = torch.stack(combined_outputs_L, dim=0) # -> (batch_size, seq_l, 128)
+            combined_outputs.append(combined_outputs_L)
+        if 'acoustic' in self.mods:
+            # print("!!")
+            combined_outputs_A = []
+            for x in torch.split(inputs[1], 1, 0):
+                x = torch.squeeze(x, 0) # input -> (39, 33, 300)
+                # print(x.size())
+                cnnOut = self.CNN_A(x.permute(0, 2, 1)) # -> (39, 128)
+                # print(cnnOut)
+                x_highway = self.Highway_A(cnnOut)
+                x_word_emb = self.dropout(x_highway)
+                combined_outputs_A.append(x_word_emb)
+                # print(x_word_emb)
+            combined_outputs_A = torch.stack(combined_outputs_A, dim=0) # -> (batch_size, seq_l, 128)
+            combined_outputs.append(combined_outputs_A)
+        if 'emotient' in self.mods:
+            # print("!!!")
+            combined_outputs_E = []
+            i = 0
+            
+            # print(len(window_length_sort))
+            # print(len(window_length_sort[0]))
+            for x in torch.split(inputs[2], 1, 0):
+                # TODO: just taking the avg now, no CNN
+                # input <- (39, ~max window, 20)
+                # output <- (39, 20)
+                x = torch.squeeze(x, 0) # input -> (39, ~max window, 20)
+                # cnnOut = self.CNN_E(x.permute(0, 2, 1)) # -> (39, 128)
+                # x_highway = self.Highway_E(cnnOut)
+                # x_word_emb = self.dropout(x_highway)
+                x_rnn_list = []
+                # split over the RNN batch -> 39
+                j = 0
+                for x_rnn in torch.split(x, 1, 0): # <- (1, ~max window, 20)
+                    max_window_length = x_rnn.size()[1]
+                    # print(x_rnn.size())
+                    x_rnn_length = window_length_sort[i][j]
+                    # print(x_rnn_length)
+                    x_rnn_pack = pack_padded_sequence(x_rnn, [x_rnn_length], batch_first=True)
+                    h0 = torch.zeros(1, 1, 128).to(self.device)
+                    c0 = torch.zeros(1, 1, 128).to(self.device)
+                    h, _ = self.CNN_RNN(x_rnn_pack, (h0, c0))
+                    h, _ = pad_packed_sequence(h, batch_first=True) # <- (1, ~max window, 128)
+                    # pad h so that have 150 as length
+                    if h.size()[1] < max_window_length:
+                        h = torch.nn.functional.pad(h, (0, 0, 0, max_window_length-h.size()[1]))
+                    x_rnn_list.append(torch.squeeze(h, 0))
+                    j += 1
+                # print(len(x_rnn_list))
+                # print(x_rnn_list[0].size())
+                x_rnn_stack = torch.stack(x_rnn_list, dim=0) # -> (39, 150, 128)
+                print(x_rnn_stack.size())
+                cnnOut = self.CNN_E(x_rnn_stack.permute(0, 2, 1)) # -> (39, 128)
+                x_highway = self.Highway_E(cnnOut)
+                x_word_emb = self.dropout(x_highway)
+                combined_outputs_E.append(x_word_emb)
+                i += 1
+            # print(combined_outputs_E)
+            combined_outputs_E = torch.stack(combined_outputs_E, dim=0) # -> (batch_size, seq_l, 128)
+            combined_outputs.append(combined_outputs_E)
+            # print(combined_outputs_E)
+        if len(combined_outputs) > 1:
+            combined_outputs = torch.cat(combined_outputs, 2)
+        else:
+            combined_outputs = combined_outputs[0]
+        # print(combined_outputs)
         predict = self.LSTM(combined_outputs, mask, length)
+        # print(predict.tolist())
         return predict
 
 class MultiLSTM(nn.Module):

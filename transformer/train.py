@@ -97,137 +97,6 @@ def generateTrainBatch(input_data, input_target, input_length, args, batch_size=
         # length_sort = torch.tensor(length_sort, dtype=torch.float)
         yield (data_sort, torch.unsqueeze(target_sort, dim=2), lstm_masks, old_length_sort)
 
-def generateTrainBatchMulti(input_data_raw, input_target, input_length, args, batch_size=25):
-    # (data, target, mask, lengths)
-    # input_data_raw = [L, A, E]
-    
-
-    input_size = len(input_data_raw[0])
-    index = [i for i in range(0, input_size)]
-    shuffle(index)
-    shuffle_chunks = [i for i in chunks(index, batch_size)]
-
-    for chunk in shuffle_chunks:
-
-        # L
-        input_data_L = input_data_raw[0]
-        data_chunk = [input_data_L[index] for index in chunk] # <- ~batch_size, x, y, z
-        length_chunk = [input_length[index] for index in chunk] # <- ~batch_size
-        # print(length_chunk)
-
-        max_length = max(length_chunk)
-
-        combined_data = list(zip(data_chunk, length_chunk))
-        combined_data.sort(key=itemgetter(1),reverse=True)
-
-        data_sort_L = []
-        length_sort = []
-        for pair in combined_data:
-            data_sort_L.append(pair[0])
-            length_sort.append(pair[1])
-
-        data_sort_L = torch.tensor(data_sort_L, dtype=torch.float)
-        old_length_sort = copy.deepcopy(length_sort)
-        length_sort = torch.tensor(length_sort)
-        data_sort_L = data_sort_L[:,:max_length,:,:]
-
-        # A
-        input_data_A = input_data_raw[1]
-        data_chunk = [input_data_A[index] for index in chunk] # <- ~batch_size, x, y, z
-        length_chunk = [input_length[index] for index in chunk] # <- ~batch_size
-        # print(length_chunk)
-
-        max_length = max(length_chunk)
-
-        combined_data = list(zip(data_chunk, length_chunk))
-        combined_data.sort(key=itemgetter(1),reverse=True)
-        data_sort_A = []
-        length_sort = []
-        for pair in combined_data:
-            data_sort_A.append(pair[0])
-            length_sort.append(pair[1])
-
-        data_sort_A = torch.tensor(data_sort_A, dtype=torch.float)
-        old_length_sort = copy.deepcopy(length_sort)
-        length_sort = torch.tensor(length_sort)
-        data_sort_A = data_sort_A[:,:max_length,:,:]
-
-        # E
-        input_data_E = input_data_raw[2]
-        data_chunk = [input_data_E[index] for index in chunk] # <- ~batch_size, x, y, z
-        target_chunk = [input_target[index] for index in chunk] # <- ~batch_size, x
-        length_chunk = [input_length[index] for index in chunk] # <- ~batch_size
-        # print(length_chunk)
-
-        max_length = max(length_chunk)
-
-        combined_data = list(zip(data_chunk, length_chunk))
-        combined_data.sort(key=itemgetter(1),reverse=True)
-        combined_rating = list(zip(target_chunk, length_chunk))
-        combined_rating.sort(key=itemgetter(1),reverse=True)
-        data_sort_E = []
-        target_sort = []
-        length_sort = []
-        for pair in combined_data:
-            data_sort_E.append(pair[0])
-            length_sort.append(pair[1])
-
-        for pair in combined_rating:
-            target_sort.append(pair[0])
-
-        data_sort_E = torch.tensor(data_sort_E, dtype=torch.float)
-        target_sort = torch.tensor(target_sort, dtype=torch.float)
-        old_length_sort = copy.deepcopy(length_sort)
-        length_sort = torch.tensor(length_sort)
-        data_sort_E = data_sort_E[:,:max_length,:,:]
-        target_sort = target_sort[:,:max_length]
-
-        lstm_masks = torch.zeros(data_sort_A.size()[0], data_sort_A.size()[1], 1, dtype=torch.float)
-        for i in range(lstm_masks.size()[0]):
-            lstm_masks[i,:old_length_sort[i]] = 1
-
-        yield ([data_sort_L, data_sort_A, data_sort_E], torch.unsqueeze(target_sort, dim=2), lstm_masks, old_length_sort)
-
-def trainMulti(input_data, input_target, lengths, model, criterion, optimizer, epoch, args):
-    # input data = [L, A, E]
-    model.train()
-    data_num = 0
-    loss = 0.0
-    batch_num = 0
-    for (data, target, mask, lengths) in generateTrainBatchMulti(input_data,
-                                                            input_target,
-                                                            lengths,
-                                                            args):
-        # send to device
-        mask = mask.to(args.device)
-        data[0] = data[0].to(args.device)
-        data[1] = data[1].to(args.device)
-        data[2] = data[2].to(args.device)
-        target = target.to(args.device)
-        # lengths = lengths.to(args.device)
-        # Run forward pass.
-        output = model([data[0], data[1], data[2]], lengths, mask)
-        # Compute loss and gradients
-        batch_loss = criterion(output, target)
-        # Accumulate total loss for epoch
-        loss += batch_loss
-        # Average over number of non-padding datapoints before stepping
-        batch_loss /= sum(lengths)
-        batch_loss.backward()
-        # Step, then zero gradients
-        optimizer.step()
-        optimizer.zero_grad()
-        # Keep track of total number of time-points
-        data_num += sum(lengths)
-        logger.info('Batch: {:5d}\tLoss: {:2.5f}'.\
-              format(batch_num, loss/data_num))
-        batch_num += 1
-    # Average losses and print
-    loss /= data_num
-    logger.info('---')
-    logger.info('Epoch: {}\tLoss: {:2.5f}'.format(epoch, loss))
-    return loss
-
 def train(input_data, input_target, lengths, model, criterion, optimizer, epoch, args):
     model.train()
     data_num = 0
@@ -265,60 +134,6 @@ def train(input_data, input_target, lengths, model, criterion, optimizer, epoch,
     logger.info('---')
     logger.info('Epoch: {}\tLoss: {:2.5f}'.format(epoch, loss))
     return loss
-
-def evaluateMulti(input_data, input_target, lengths, model, criterion, args, fig_path=None):
-    model.eval()
-    predictions = []
-    data_num = 0
-    loss, corr, ccc = 0.0, [], []
-    count = 0
-
-    local_best_output = []
-    local_best_target = []
-    local_best_index = 0
-    index = 0
-    local_best_ccc = -1
-    for (data, target, mask, lengths) in generateTrainBatchMulti(input_data,
-                                                            input_target,
-                                                            lengths,
-                                                            args,
-                                                            batch_size=1):
-        # send to device
-        mask = mask.to(args.device)
-        data[0] = data[0].to(args.device)
-        data[1] = data[1].to(args.device)
-        data[2] = data[2].to(args.device)
-        target = target.to(args.device)
-        # Run forward pass
-        output = model([data[0], data[1], data[2]], lengths, mask)
-        # Compute loss
-        loss += criterion(output, target)
-        # Keep track of total number of time-points
-        data_num += sum(lengths)
-        # Compute correlation and CCC of predictions against ratings
-        output = torch.squeeze(torch.squeeze(output, dim=2), dim=0).cpu().numpy()
-        target = torch.squeeze(torch.squeeze(target, dim=2), dim=0).cpu().numpy()
-        if count == 0:
-            # print(output)
-            # print(target)
-            count += 1
-        curr_ccc = eval_ccc(output, target)
-        corr.append(pearsonr(output, target)[0])
-        ccc.append(curr_ccc)
-        index += 1
-        if curr_ccc > local_best_ccc:
-            local_best_output = output
-            local_best_target = target
-            local_best_index = index
-            local_best_ccc = curr_ccc
-    # Average losses and print
-    loss /= data_num
-    # Average statistics and print
-    stats = {'corr': np.mean(corr), 'corr_std': np.std(corr),
-             'ccc': np.mean(ccc), 'ccc_std': np.std(ccc), 'max_ccc': local_best_ccc}
-    logger.info('Evaluation\tLoss: {:2.5f}\tCorr: {:0.3f}\tCCC: {:0.9f}'.\
-          format(loss, stats['corr'], stats['ccc']))
-    return predictions, loss, stats, (local_best_output, local_best_target, local_best_index)
 
 def evaluate(input_data, input_target, lengths, model, criterion, args, fig_path=None):
     model.eval()
@@ -441,302 +256,148 @@ def load_data(modalities, data_dir):
     print("Done.")
     return train_data, test_data
 
-def constructCNNInputMulti(input_data, window_size=5, overlap_size=2):
-    # input_data -> [num_vid, ds]
-    # output_data -> (num_vid, num_window_in_vid, num_words_in_window, 300)
-    CNNInput = [] # Linguistic
-    CNNInputA = [] # Acoustic
-    CNNInputE = [] # Emo
+def videoInputHelper(input_data, window_size, channel, old_version=False):
+    # channel features
+    vectors_raw = input_data[channel]
+    ts = input_data[channel+"_timer"]
+    # remove nan values
+    vectors = []
+    for vec in vectors_raw:
+        inner_vec = []
+        for v in vec:
+            if np.isnan(v):
+                inner_vec.append(0)
+            else:
+                inner_vec.append(v)
+        vectors.append(inner_vec)
 
-    TargetOutput = []
-    cc = 0
+    video_vs = []
+    if not old_version:
+        count_v = 0
+        current_time = 0.0
+        window_vs = []
+        while count_v < len(vectors):
+            t = ts[count_v]
+            if t <= current_time + window_size:
+                window_vs.append(vectors[count_v])
+                count_v += 1
+            else:
+                video_vs.append(window_vs)
+                window_vs = []
+                current_time += window_size
+    else:
+        count_v = 0
+        current_time = 0.0
+        window_vs = []
+        for vec in vectors:
+            offset = ts[count_v]
+            if offset <= current_time + window_size:
+                window_vs.append(vec)
+            else:
+                video_vs.append(window_vs)
+                window_vs = [vec]
+                current_time += window_size
+            count_v += 1
 
+    return video_vs
+
+def ratingInputHelper(input_data, window_size):
+    # ratings
+    ratings = input_data['ratings']
+    video_rs = []
+    window_size_c = window_size/0.5
+    rating_sum = 0.0
+    for i in range(0, len(ratings)):
+        rating_sum += ratings[i][0]
+        if i != 0 and i%window_size_c == 0:
+            video_rs.append((rating_sum*1.0/window_size_c))
+            rating_sum = 0.0
+    return video_rs
+
+'''
+Construct inputs for different channels: emotient, linguistic, ratings, etc..
+'''
+def constructInput(input_data, window_size=5, channels=['linguistic']):
+    ret_input_features = {}
+    ret_ratings = []
     for data in input_data:
-        word_counter = 0
-        current_time = 0.0
-        videoInput = []
-        windowInput = []
-        videoEndOffset = data['linguistic_timer'][len(data['linguistic_timer'])-1][1]
+        # channel features
+        minL = 99999999
+        for channel in channels:
+            video_vs = videoInputHelper(data, window_size, channel)
+            if channel not in ret_input_features.keys():
+                ret_input_features[channel] = []
+            ret_input_features[channel].append(video_vs)
+            if len(video_vs) < minL:
+                minL = len(video_vs)
+        video_rs = ratingInputHelper(data, window_size)
+        if len(video_rs) < minL:
+            minL = len(video_rs)
+        # concate
+        for channel in channels:
+             ret_input_features[channel][-1] = ret_input_features[channel][-1][:minL]
+        ret_ratings.append(video_rs[:minL])
+    return ret_input_features, ret_ratings
 
-        out = []
-        for word_vec in data['linguistic']:
-            out2 = []
-            for e in word_vec:
-                if np.isnan(e):
-                    out2.append(0)
-                else:
-                    out2.append(e)
-            out.append(out2)
-
-        for word_vec in out:
-            # print(sum(np.isnan(word_vec)))
-            onset = data['linguistic_timer'][word_counter][0]
-            offset = data['linguistic_timer'][word_counter][1]
-            if offset <= current_time + window_size:
-                windowInput.append(word_vec)
-            else:
-                videoInput.append(windowInput)
-                windowInput = [word_vec]
-                current_time += window_size
-            word_counter += 1
-
-        vec_count = 0
-        outA = []
-        current_time = 0.0
-        videoInputA = []
-        windowInputA = []
-        for acoustic_vec in data['acoustic']:
-            outA.append(acoustic_vec)
-        
-        for acoustic_vec in outA:
-            offset = data['acoustic_timer'][vec_count][0]
-            if offset <= current_time + window_size:
-                windowInputA.append(acoustic_vec)
-            else:
-                videoInputA.append(windowInputA)
-                windowInputA = [acoustic_vec]
-                current_time += window_size
-            vec_count += 1
-
-        vec_count = 0
-        outE = []
-        current_time = 0.0
-        videoInputE = []
-        windowInputE = []
-        for emotient_vec in data['emotient']:
-            outE.append(emotient_vec)
-        
-        for emotient_vec in outE:
-            offset = data['emotient_timer'][vec_count]
-            if offset <= current_time + window_size:
-                windowInputE.append(emotient_vec)
-            else:
-                videoInputE.append(windowInputE)
-                windowInputE = [emotient_vec]
-                current_time += window_size
-            vec_count += 1
-
-        WindowOutput = []
-        window_size_c = window_size/0.5
-        rating_sum = 0.0
-        for i in range(0, len(data['ratings'])):
-            rating_sum += data['ratings'][i][0]
-            if i != 0 and i%window_size_c == 0:
-                WindowOutput.append((rating_sum*1.0/window_size_c))
-                rating_sum = 0.0
-
-        minL = min([len(videoInput), len(WindowOutput), len(videoInputE), len(videoInputA)])
-        # print(minL)
-        videoInput = videoInput[:minL]
-        videoInputE = videoInputE[:minL]
-        videoInputA = videoInputA[:minL]
-        WindowOutput = WindowOutput[:minL]
-        # L, A, E in this sequence
-        CNNInput.append(videoInput)
-        CNNInputA.append(videoInputA)
-        CNNInputE.append(videoInputE)
-        TargetOutput.append(WindowOutput)
-        cc += 1
-        
-    return [CNNInput, CNNInputA, CNNInputE], TargetOutput
-
-def constructCNNInput(input_data, window_size=5, overlap_size=2):
-    # input_data -> [num_vid, ds]
-    # output_data -> (num_vid, num_window_in_vid, num_words_in_window, 300)
-    CNNInput = []
-    TargetOutput = []
-    cc = 0
-
-    for data in input_data:
-        word_counter = 0
-        current_time = 0.0
-        videoInput = []
-        windowInput = []
-        videoEndOffset = data['linguistic_timer'][len(data['linguistic_timer'])-1][1]
-
-        # print(data['linguistic'])
-
-        out = []
-        for word_vec in data['linguistic']:
-            out2 = []
-            for e in word_vec:
-                if np.isnan(e):
-                    out2.append(0)
-                else:
-                    out2.append(e)
-            out.append(out2)
-
-        # with overlap
-        # for word_vec in out:
-        #     offset = data['linguistic_timer'][word_counter][1] 
-        #     if offset > current_time and current_time + window_size < videoEndOffset:
-        #         index = word_counter
-        #         while offset <= current_time + window_size:
-        #             windowInput.append(out[index])
-        #             index += 1
-        #             if index < len(data['linguistic_timer']):
-        #                 offset = data['linguistic_timer'][index][1]
-        #         videoInput.append(windowInput)
-        #         current_time += overlap_size
-        #         windowInput = []
-        #     word_counter += 1
-
-        # # rating
-        # WindowOutput = []
-        # window_size_c = window_size/0.5
-        # overlap_size_c = overlap_size/0.5
-        # rating_sum = 0.0
-        # for i in range(0, len(data['ratings']), int(overlap_size_c)):
-        #     if i + window_size_c < len(data['ratings']):
-        #         for j in range(i, int(i+window_size_c)):
-        #             rating_sum += data['ratings'][j][0]
-        #         WindowOutput.append((rating_sum*1.0/window_size_c))
-        #         rating_sum = 0.0
-
-
-        for word_vec in out:
-            # print(sum(np.isnan(word_vec)))
-            onset = data['linguistic_timer'][word_counter][0]
-            offset = data['linguistic_timer'][word_counter][1]
-            if offset <= current_time + window_size:
-                windowInput.append(word_vec)
-            else:
-                videoInput.append(windowInput)
-                windowInput = [word_vec]
-                current_time += window_size
-            word_counter += 1
-        
-
-        WindowOutput = []
-        window_size_c = window_size/0.5
-        rating_sum = 0.0
-        for i in range(0, len(data['ratings'])):
-            rating_sum += data['ratings'][i][0]
-            if i != 0 and i%window_size_c == 0:
-                WindowOutput.append((rating_sum*1.0/window_size_c))
-                rating_sum = 0.0
-
-        minL = min(len(videoInput), len(WindowOutput))
-        videoInput = videoInput[:minL]
-        WindowOutput = WindowOutput[:minL]
-        CNNInput.append(videoInput)
-        TargetOutput.append(WindowOutput)
-        cc += 1
-        
-    return CNNInput, TargetOutput
-
-def size4d(input):
-    dim1 = len(input)
-    dim2 = len(input[0])
-    dim3 = len(input[0][0])
-    dim4 = len(input[0][0][0])
-    return dim1, dim2, dim3, dim4
-
-def paddingCNNInputMulti(input_data, input_rating):
-    # L, A, E (300, 988, 20)
-    # input_data -> (num_vid, num_window_in_vid, num_words_in_window, 300)
-    # input_rating -> (num_vid, num_window_in_vid)
-    # output_data -> (num_vid, num_window_in_vid, max_num_words_in_window, 300)
-    outputL = []
-    outputA = []
-    outputE = []
-    max_num_windows = 0
-    num_windows_len = []
-
-    max_num_wordsL = 0
-    for data in input_data[0]:
-        if max_num_windows < len(data):
-            max_num_windows = len(data)
-        num_windows_len.append(len(data))
-        if max_num_wordsL < max([len(w) for w in data]):
-            max_num_wordsL = max([len(w) for w in data])
-
-    max_num_wordsA = 0
-    for data in input_data[1]:
-        if max_num_wordsA < max([len(w) for w in data]):
-            max_num_wordsA = max([len(w) for w in data])
-
-    max_num_wordsE = 0
-    for data in input_data[2]:
-        if max_num_wordsE < max([len(w) for w in data]):
-            max_num_wordsE = max([len(w) for w in data])
-
-    padVec = [0.0]*300
-    for vid in input_data[0]:
-        vidNewTmp = []
-        for wind in vid:
-            windNew = [padVec] * max_num_wordsL
-            windNew[:len(wind)] = wind
-            vidNewTmp.append(windNew)
-        vidNew = [[padVec] * max_num_wordsL]*max_num_windows
-        vidNew[:len(vidNewTmp)] = vidNewTmp
-        outputL.append(vidNew)
-
-    padVec = [0.0]*988
-    for vid in input_data[1]:
-        vidNewTmp = []
-        for wind in vid:
-            windNew = [padVec] * max_num_wordsA
-            windNew[:len(wind)] = wind
-            vidNewTmp.append(windNew)
-        vidNew = [[padVec] * max_num_wordsA]*max_num_windows
-        vidNew[:len(vidNewTmp)] = vidNewTmp
-        outputA.append(vidNew)
-
-    padVec = [0.0]*20
-    for vid in input_data[2]:
-        vidNewTmp = []
-        for wind in vid:
-            windNew = [padVec] * max_num_wordsE
-            windNew[:len(wind)] = wind
-            vidNewTmp.append(windNew)
-        vidNew = [[padVec] * max_num_wordsE]*max_num_windows
-        vidNew[:len(vidNewTmp)] = vidNewTmp
-        outputE.append(vidNew)
-
-    rating_output = []
-    # pad ratings
-    for rating in input_rating:
-        ratingNew = [0]*max_num_windows
-        ratingNew[:len(rating)] = rating
-        rating_output.append(ratingNew)
-
-    return [outputL, outputA, outputE], rating_output, num_windows_len
-
-def paddingCNNInput(input_data, input_rating):
-    # input_data -> (num_vid, num_window_in_vid, num_words_in_window, 300)
-    # input_rating -> (num_vid, num_window_in_vid)
-    # output_data -> (num_vid, num_window_in_vid, max_num_words_in_window, 300)
+def padInputHelper(input_data, dim, old_version=False):
     output = []
-    max_num_words = 0
+    max_num_vec_in_window = 0
     max_num_windows = 0
-    num_windows_len = []
+    seq_lens = []
     for data in input_data:
         if max_num_windows < len(data):
             max_num_windows = len(data)
-        num_windows_len.append(len(data))
-        if max_num_words < max([len(w) for w in data]):
-            max_num_words = max([len(w) for w in data])
+        seq_lens.append(len(data))
+        if max_num_vec_in_window < max([len(w) for w in data]):
+            max_num_vec_in_window = max([len(w) for w in data])
 
-    padVec = [0.0]*300
+    padVec = [0.0]*dim
     for vid in input_data:
         vidNewTmp = []
         for wind in vid:
-            windNew = [padVec] * max_num_words
-            windNew[:len(wind)] = wind
-            vidNewTmp.append(windNew)
-        vidNew = [[padVec] * max_num_words]*max_num_windows
+            if not old_version:
+                # window might not contain any vector due to null during this window
+                if len(wind) != 0:
+                    windNew = [padVec] * max_num_vec_in_window
+                    # pad with last frame features in this window
+                    windNew[:len(wind)] = wind
+                    vidNewTmp.append(windNew)
+                    # update the pad vec to be the last avaliable vector
+                else:
+                    windNew = [padVec] * max_num_vec_in_window
+                    vidNewTmp.append(windNew)
+            else:
+                windNew = [padVec] * max_num_vec_in_window
+                windNew[:len(wind)] = wind
+                vidNewTmp.append(windNew)
+        vidNew = [[padVec] * max_num_vec_in_window]*max_num_windows
         vidNew[:len(vidNewTmp)] = vidNewTmp
         output.append(vidNew)
+    return output, seq_lens
 
-    rating_output = []
+'''
+pad every sequence to max length, also we will be padding windows as well
+'''
+def padInput(input_data, channels, dimensions):
+    # input_features <- list of dict: {channel_1: [117*features],...}
+    ret = {}
+    seq_lens = []
+    for channel in channels:
+        pad_channel, seq_lens = padInputHelper(input_data[channel], dimensions[channel])
+        ret[channel] = pad_channel
+    return ret, seq_lens
+
+'''
+pad targets
+'''
+def padRating(input_data, max_len):
+    output = []
     # pad ratings
-    for rating in input_rating:
-        ratingNew = [0]*max_num_windows
+    for rating in input_data:
+        ratingNew = [0]*max_len
         ratingNew[:len(rating)] = rating
-        rating_output.append(ratingNew)
-
-    return output, rating_output, num_windows_len
+        output.append(ratingNew)
+    return output
 
 def main(args):
     # Fix random seed
@@ -747,21 +408,27 @@ def main(args):
     # Convert device string to torch.device
     args.device = (torch.device(args.device) if torch.cuda.is_available()
                    else torch.device('cpu'))
-    args.modalities = ['linguistic', 'acoustic', 'emotient']
-
+    args.modalities = ['emotient']
+    mod_dimension = {'linguistic' : 300, 'emotient' : 20, 'acoustic' : 988}
     # Load data for specified modalities
     train_data, test_data = load_data(args.modalities, args.data_dir)
-    return 1
-    # Construct CNN inputs and length vector and masks
-    CNNInput, TargetOutput = constructCNNInputMulti(train_data)
-    cnnInput, targetOutput, num_windows_len = paddingCNNInputMulti(CNNInput, TargetOutput)
-
-    CNNInput_test, TargetOutput_test = constructCNNInputMulti(test_data)
-    cnnInput_test, targetOutput_test, num_windows_len_test = paddingCNNInputMulti(CNNInput_test, TargetOutput_test)
-
+    # setting
+    window_size = 1
+    # training data
+    input_features_train, ratings_train = constructInput(train_data, channels=args.modalities, window_size=window_size)
+    input_padded_train, seq_lens_train = padInput(input_features_train, args.modalities, mod_dimension)
+    ratings_padded_train = padRating(ratings_train, max(seq_lens_train))
+    # testing data
+    input_features_test, ratings_test = constructInput(test_data, channels=args.modalities, window_size=window_size)
+    input_padded_test, seq_lens_test = padInput(input_features_test, args.modalities, mod_dimension)
+    ratings_padded_test = padRating(ratings_test, max(seq_lens_test))
+    
+    # TODO: remove this
+    input_train = input_padded_train[args.modalities[0]]
+    input_test = input_padded_test[args.modalities[0]]
     # construct model
     model_modalities = args.modalities
-    model = MultiCNNLSTM(mods=model_modalities, device=args.device)
+    model = MultiCNNLSTM(device=args.device)
 
     criterion = nn.MSELoss(reduction='sum')
     optimizer = optim.Adam(model.parameters(), lr=args.lr, weight_decay=1e-4)
@@ -771,12 +438,12 @@ def main(args):
     single_best_ccc = -1
     for epoch in range(1, args.epochs+1):
         print('---')
-        trainMulti(cnnInput, targetOutput, num_windows_len,
+        train(input_train, ratings_padded_train, seq_lens_train,
               model, criterion, optimizer, epoch, args)
         if epoch % args.eval_freq == 0:
             with torch.no_grad():
                 pred, loss, stats, (local_best_output, local_best_target, local_best_index) =\
-                    evaluateMulti(cnnInput_test, targetOutput_test, num_windows_len_test,
+                    evaluate(input_test, ratings_padded_test, seq_lens_test,
                              model, criterion, args)
             if stats['ccc'] > best_ccc:
                 best_ccc = stats['ccc']
