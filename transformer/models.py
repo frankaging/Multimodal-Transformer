@@ -72,12 +72,12 @@ class CNN(nn.Module):
         x_conv = self.conv1d(x_reshape) # (batch_size, window_embed_size, m_word+k+1)
         # x_conv_relu = nn.functional.relu(x_conv)
         L = x_conv.size()[2]
-        maxpool = nn.MaxPool1d(L, stride=5)
+        maxpool = nn.MaxPool1d(L, stride=3)
         x_conv_out = torch.squeeze(maxpool(x_conv), 2) # (batch_size, window_embed_size)
         return x_conv_out
 
 class MultiCNNLSTM(nn.Module):
-    def __init__(self, mods, dims, window_embed_size=256, k=10,
+    def __init__(self, mods, dims, window_embed_size=256, k=3,
                  device=torch.device('cuda:0')):
         super(MultiCNNLSTM, self).__init__()
         self.element_embed_size = dims[mods[0]]

@@ -54,6 +54,7 @@ def chunks(l, n):
         yield l[i:i + n]
 
 def generateTrainBatch(input_data, input_target, input_length, args, batch_size=25):
+    # TODO: support input_data as a dictionary
     # (data, target, mask, lengths)
     input_size = len(input_data)
     index = [i for i in range(0, input_size)]
@@ -98,6 +99,7 @@ def generateTrainBatch(input_data, input_target, input_length, args, batch_size=
         yield (data_sort, torch.unsqueeze(target_sort, dim=2), lstm_masks, old_length_sort)
 
 def train(input_data, input_target, lengths, model, criterion, optimizer, epoch, args):
+    # TODO: support input_data as a dictionary
     model.train()
     data_num = 0
     loss = 0.0
@@ -408,7 +410,7 @@ def main(args):
     # Convert device string to torch.device
     args.device = (torch.device(args.device) if torch.cuda.is_available()
                    else torch.device('cpu'))
-    args.modalities = ['emotient']
+    args.modalities = ['linguistic']
     mod_dimension = {'linguistic' : 300, 'emotient' : 20, 'acoustic' : 988}
     # Load data for specified modalities
     train_data, test_data = load_data(args.modalities, args.data_dir)
@@ -424,6 +426,7 @@ def main(args):
     ratings_padded_test = padRating(ratings_test, max(seq_lens_test))
     
     # TODO: remove this
+    # input_padded_train = {'linguistic' : [117*39*33*300], 'emotient' : []}
     input_train = input_padded_train[args.modalities[0]]
     input_test = input_padded_test[args.modalities[0]]
     # construct model
