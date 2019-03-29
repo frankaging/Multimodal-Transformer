@@ -24,6 +24,66 @@ def convolve(x, attn):
                            i in range(attn.shape[2])], dim=-1)
     return torch.sum(attn.unsqueeze(2) * stacked, dim=-1)
 
+class VGG16(nn.Module):
+    ''' input = (1, 1, 224, 224) '''
+    def __init__(self, window_embed_size=128, num_classes=256,
+                 dropout=0.1, device=torch.device('cuda:0')):
+        super(VGG16, self).__init__()
+        self.num_classes = num_classes
+        self.convs = nn.Sequential(
+                        nn.Conv2d(1, 64, kernel_size=3, padding=1),
+                        nn.ReLU(inplace=True),
+                        nn.Conv2d(64, 64, kernel_size=3, padding=1),
+                        nn.ReLU(inplace=True),
+                        nn.MaxPool2d(kernel_size=2, stride=2),
+                        nn.Conv2d(64, 128, kernel_size=3, padding=1),
+                        nn.ReLU(inplace=True),
+                        nn.Conv2d(128, 128, kernel_size=3, padding=1),
+                        nn.ReLU(inplace=True),
+                        nn.MaxPool2d(kernel_size=2, stride=2),
+                        nn.Conv2d(128, 256, kernel_size=3, padding=1),
+                        nn.ReLU(inplace=True),
+                        nn.Conv2d(256, 256, kernel_size=3, padding=1),
+                        nn.ReLU(inplace=True),
+                        nn.Conv2d(256, 256, kernel_size=3, padding=1),
+                        nn.ReLU(inplace=True),
+                        nn.MaxPool2d(kernel_size=2, stride=2),
+                        nn.Conv2d(256, 512, kernel_size=3, padding=1),
+                        nn.ReLU(inplace=True),
+                        nn.Conv2d(512, 512, kernel_size=3, padding=1),
+                        nn.ReLU(inplace=True),
+                        nn.Conv2d(512, 512, kernel_size=3, padding=1),
+                        nn.ReLU(inplace=True),
+                        nn.MaxPool2d(kernel_size=2, stride=2),
+                        nn.Conv2d(512, 512, kernel_size=3, padding=1),
+                        nn.ReLU(inplace=True),
+                        nn.Conv2d(512, 512, kernel_size=3, padding=1),
+                        nn.ReLU(inplace=True),
+                        nn.Conv2d(512, 512, kernel_size=3, padding=1),
+                        nn.ReLU(inplace=True),
+                        nn.MaxPool2d(kernel_size=2, stride=2),
+        )
+        self.classifier = nn.Sequential(
+                            nn.Linear(512 * 3 * 3, 4096),
+                            nn.ReLU(inplace=True),
+                            nn.Dropout(),
+                            nn.Linear(4096, 4096),
+                            nn.ReLU(inplace=True),
+                            nn.Dropout(),
+                            nn.Linear(4096, num_classes),
+        )
+
+        # Store module in specified device (CUDA/CPU)
+        self.device = (device if torch.cuda.is_available() else
+                       torch.device('cpu'))
+        self.to(self.device)
+
+    def forward(self, inputs):
+        x = self.convs(inputs)
+        x = x.view(x.size(0), -1)
+        x = self.classifier(x)
+        return x
+
 class Highway(nn.Module):
 	def __init__(self, word_embed_size):
 		"""
@@ -85,14 +145,16 @@ class MultiCNNLSTM(nn.Module):
         self.dims = dims
         self.CNN = dict()
         self.Highway = dict()
-        self.window_embed_size={'linguistic' : 256, 'emotient' : 128, 'acoustic' : 256}
+        self.window_embed_size={'linguistic' : 256, 'emotient' : 128, 'acoustic' : 256, 'image' : 256}
         total_embed_size = 0
         for mod in mods:
-            self.CNN[mod] = CNN(dims[mod], self.window_embed_size[mod], k)
-            self.Highway[mod] = Highway(self.window_embed_size[mod])
+            if mod != 'image':
+                self.CNN[mod] = CNN(dims[mod], self.window_embed_size[mod], k)
+                self.Highway[mod] = Highway(self.window_embed_size[mod])
+                self.add_module('cnn_{}'.format(mod), self.CNN[mod])
+                self.add_module('highway_{}'.format(mod), self.Highway[mod])
             total_embed_size += self.window_embed_size[mod]
-            self.add_module('cnn_{}'.format(mod), self.CNN[mod])
-            self.add_module('highway_{}'.format(mod), self.Highway[mod])
+        self.VGG = VGG16()
         self.LSTM = NLPTransformer(total_embed_size)
         self.dropout = nn.Dropout(p=0.3)
         # Store module in specified device (CUDA/CPU)
@@ -108,13 +170,25 @@ class MultiCNNLSTM(nn.Module):
         for mod in self.mods:
             inputs_mod = inputs[mod]
             outputs_mod = []
-            for x in torch.split(inputs_mod, 1, 0):
-                x = torch.squeeze(x, 0) # input -> (39, 33, 300)
-                cnnOut = self.CNN[mod](x.permute(0, 2, 1)) # -> (39, 128)
-                x_highway = self.Highway[mod](cnnOut)
-                x_word_emb = self.dropout(x_highway)
-                outputs_mod.append(x_word_emb)
-            outputs_mod = torch.stack(outputs_mod, dim=0)
+            if mod == 'image':
+                for x in torch.split(inputs_mod, 1, 0):  # input -> (batch_size, 39, 33, 10000)
+                    # print(x.size())
+                    x = torch.squeeze(x, 0) # input -> (39, ~max window, 10000)
+                    # print(x.size())
+                    x = x.reshape(-1, 1, 100, 100)
+                    vggout = self.VGG(x) # -> (39, 256)
+                    # print(vggout.size())
+                    outputs_mod.append(vggout)
+                outputs_mod = torch.stack(outputs_mod, dim=0) # -> (batch_size, seq_l, 256)
+            else:
+                for x in torch.split(inputs_mod, 1, 0):
+                    x = torch.squeeze(x, 0) # input -> (39, 33, 300)
+                    cnnOut = self.CNN[mod](x.permute(0, 2, 1)) # -> (39, 128)
+                    x_highway = self.Highway[mod](cnnOut)
+                    x_word_emb = self.dropout(x_highway)
+                    outputs_mod.append(x_word_emb)
+                outputs_mod = torch.stack(outputs_mod, dim=0)
+                
             outputs.append(outputs_mod)
         if len(outputs) > 1:
             outputs = torch.cat(outputs, 2)

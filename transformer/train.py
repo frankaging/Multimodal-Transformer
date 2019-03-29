@@ -343,6 +343,8 @@ def videoInputHelper(input_data, window_size, channel, old_version=False):
         window_vs = []
         while count_v < len(vectors):
             t = ts[count_v]
+            if type(t) == list:
+                t = t[0]
             if t <= current_time + window_size:
                 window_vs.append(vectors[count_v])
                 count_v += 1
@@ -473,7 +475,7 @@ def main(args):
     # Convert device string to torch.device
     args.device = (torch.device(args.device) if torch.cuda.is_available()
                    else torch.device('cpu'))
-    args.modalities = ['linguistic']
+    args.modalities = ['linguistic', 'emotient']
     mod_dimension = {'linguistic' : 300, 'emotient' : 20, 'acoustic' : 988, 'image' : 10000}
     # Load data for specified modalities
     train_data, test_data = load_data(args.modalities, args.data_dir)
