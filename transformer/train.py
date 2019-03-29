@@ -53,53 +53,107 @@ def chunks(l, n):
     for i in range(0, len(l), n):
         yield l[i:i + n]
 
+'''
+helper to chunknize the data for each a modality
+'''
+def generateInputChunkHelper(data_chunk, length_chunk):
+    # sort the data with length from long to short
+    combined_data = list(zip(data_chunk, length_chunk))
+    combined_data.sort(key=itemgetter(1),reverse=True)
+    data_sort = []
+    for pair in combined_data:
+        data_sort.append(pair[0])
+    # produce the operatable tensors
+    data_sort_t = torch.tensor(data_sort, dtype=torch.float)
+    return data_sort_t
+
+
+# def generateTrainBatch(input_data, input_target, input_length, args, batch_size=25):
+#     # TODO: support input_data as a dictionary
+#     # (data, target, mask, lengths)
+#     input_size = len(input_data)
+#     index = [i for i in range(0, input_size)]
+#     shuffle(index)
+#     shuffle_chunks = [i for i in chunks(index, batch_size)]
+#     for chunk in shuffle_chunks:
+#         data_chunk = [input_data[index] for index in chunk] # <- ~batch_size, x, y, z
+#         target_chunk = [input_target[index] for index in chunk] # <- ~batch_size, x
+#         length_chunk = [input_length[index] for index in chunk] # <- ~batch_size
+#         # print(length_chunk)
+
+#         max_length = max(length_chunk)
+
+#         combined_data = list(zip(data_chunk, length_chunk))
+#         combined_data.sort(key=itemgetter(1),reverse=True)
+#         combined_rating = list(zip(target_chunk, length_chunk))
+#         combined_rating.sort(key=itemgetter(1),reverse=True)
+#         data_sort = []
+#         target_sort = []
+#         length_sort = []
+#         for pair in combined_data:
+#             data_sort.append(pair[0])
+#             length_sort.append(pair[1])
+
+#         for pair in combined_rating:
+#             target_sort.append(pair[0])
+
+#         data_sort = torch.tensor(data_sort, dtype=torch.float)
+#         target_sort = torch.tensor(target_sort, dtype=torch.float)
+#         old_length_sort = copy.deepcopy(length_sort)
+#         length_sort = torch.tensor(length_sort)
+#         data_sort = data_sort[:,:max_length,:,:]
+#         target_sort = target_sort[:,:max_length]
+
+#         lstm_masks = torch.zeros(data_sort.size()[0], data_sort.size()[1], 1, dtype=torch.float)
+#         for i in range(lstm_masks.size()[0]):
+#             lstm_masks[i,:old_length_sort[i]] = 1
+#         # print(lstm_masks.size())
+#         # print(data_sort.size())
+#         # print(target_sort.size())
+#         # length_sort = torch.tensor(length_sort, dtype=torch.float)
+#         yield (data_sort, torch.unsqueeze(target_sort, dim=2), lstm_masks, old_length_sort)
+
+'''
+yielding training batch for the training process
+'''
 def generateTrainBatch(input_data, input_target, input_length, args, batch_size=25):
     # TODO: support input_data as a dictionary
-    # (data, target, mask, lengths)
-    input_size = len(input_data)
+    # get chunk
+    input_size = len(input_data[list(input_data.keys())[0]]) # all values have same size
     index = [i for i in range(0, input_size)]
     shuffle(index)
     shuffle_chunks = [i for i in chunks(index, batch_size)]
     for chunk in shuffle_chunks:
-        data_chunk = [input_data[index] for index in chunk] # <- ~batch_size, x, y, z
-        target_chunk = [input_target[index] for index in chunk] # <- ~batch_size, x
-        length_chunk = [input_length[index] for index in chunk] # <- ~batch_size
-        # print(length_chunk)
-
+        # chunk yielding data
+        yield_input_data = {}
+        # same across a single chunk
+        target_chunk = [input_target[index] for index in chunk]
+        length_chunk = [input_length[index] for index in chunk]
+        # max length
         max_length = max(length_chunk)
-
-        combined_data = list(zip(data_chunk, length_chunk))
-        combined_data.sort(key=itemgetter(1),reverse=True)
-        combined_rating = list(zip(target_chunk, length_chunk))
-        combined_rating.sort(key=itemgetter(1),reverse=True)
-        data_sort = []
-        target_sort = []
-        length_sort = []
-        for pair in combined_data:
-            data_sort.append(pair[0])
-            length_sort.append(pair[1])
-
-        for pair in combined_rating:
-            target_sort.append(pair[0])
-
-        data_sort = torch.tensor(data_sort, dtype=torch.float)
-        target_sort = torch.tensor(target_sort, dtype=torch.float)
-        old_length_sort = copy.deepcopy(length_sort)
-        length_sort = torch.tensor(length_sort)
-        data_sort = data_sort[:,:max_length,:,:]
+        # mod data generating
+        for mod in list(input_data.keys()):
+            data_chunk = [input_data[mod][index] for index in chunk]
+            data_chunk_sorted = \
+                generateInputChunkHelper(data_chunk, length_chunk)
+            data_chunk_sorted = data_chunk_sorted[:,:max_length,:,:]
+            yield_input_data[mod] = data_chunk_sorted
+        # target generating
+        target_sort = \
+            generateInputChunkHelper(target_chunk, length_chunk)
         target_sort = target_sort[:,:max_length]
-
-        lstm_masks = torch.zeros(data_sort.size()[0], data_sort.size()[1], 1, dtype=torch.float)
+        # mask generation for the whole batch
+        lstm_masks = torch.zeros(target_sort.size()[0], target_sort.size()[1], 1, dtype=torch.float)
+        length_chunk.sort(reverse=True)
         for i in range(lstm_masks.size()[0]):
-            lstm_masks[i,:old_length_sort[i]] = 1
-        # print(lstm_masks.size())
-        # print(data_sort.size())
-        # print(target_sort.size())
-        # length_sort = torch.tensor(length_sort, dtype=torch.float)
-        yield (data_sort, torch.unsqueeze(target_sort, dim=2), lstm_masks, old_length_sort)
+            lstm_masks[i,:length_chunk[i]] = 1
+        # yielding for each batch
+        yield (yield_input_data, torch.unsqueeze(target_sort, dim=2), lstm_masks, length_chunk)
 
 def train(input_data, input_target, lengths, model, criterion, optimizer, epoch, args):
     # TODO: support input_data as a dictionary
+    # input_data = input_data['linguistic']
+
     model.train()
     data_num = 0
     loss = 0.0
@@ -111,7 +165,10 @@ def train(input_data, input_target, lengths, model, criterion, optimizer, epoch,
                                                             args):
         # send to device
         mask = mask.to(args.device)
-        data = data.to(args.device)
+        # send all data to the device
+        for mod in list(data.keys()):
+            data[mod] = data[mod].to(args.device)
+
         target = target.to(args.device)
         # lengths = lengths.to(args.device)
         # Run forward pass.
@@ -138,6 +195,9 @@ def train(input_data, input_target, lengths, model, criterion, optimizer, epoch,
     return loss
 
 def evaluate(input_data, input_target, lengths, model, criterion, args, fig_path=None):
+
+    # input_data = input_data['linguistic']
+
     model.eval()
     predictions = []
     data_num = 0
@@ -154,9 +214,12 @@ def evaluate(input_data, input_target, lengths, model, criterion, args, fig_path
                                                             lengths,
                                                             args,
                                                             batch_size=1):
+
         # send to device
         mask = mask.to(args.device)
-        data = data.to(args.device)
+        # send all data to the device
+        for mod in list(data.keys()):
+            data[mod] = data[mod].to(args.device)
         target = target.to(args.device)
         # Run forward pass
         output = model(data, lengths, mask)
@@ -411,11 +474,11 @@ def main(args):
     args.device = (torch.device(args.device) if torch.cuda.is_available()
                    else torch.device('cpu'))
     args.modalities = ['linguistic']
-    mod_dimension = {'linguistic' : 300, 'emotient' : 20, 'acoustic' : 988}
+    mod_dimension = {'linguistic' : 300, 'emotient' : 20, 'acoustic' : 988, 'image' : 10000}
     # Load data for specified modalities
     train_data, test_data = load_data(args.modalities, args.data_dir)
     # setting
-    window_size = 1
+    window_size = 5
     # training data
     input_features_train, ratings_train = constructInput(train_data, channels=args.modalities, window_size=window_size)
     input_padded_train, seq_lens_train = padInput(input_features_train, args.modalities, mod_dimension)
@@ -425,12 +488,14 @@ def main(args):
     input_padded_test, seq_lens_test = padInput(input_features_test, args.modalities, mod_dimension)
     ratings_padded_test = padRating(ratings_test, max(seq_lens_test))
     
-    # TODO: remove this
+    # TODO: could remove this if accept dictionary inputs
     # input_padded_train = {'linguistic' : [117*39*33*300], 'emotient' : []}
-    input_train = input_padded_train[args.modalities[0]]
-    input_test = input_padded_test[args.modalities[0]]
+    input_train = input_padded_train
+    input_test = input_padded_test
     # construct model
-    model_modalities = args.modalities
+    # model = MultiCNNLSTM(mods=args.modalities, dims=mod_dimension, device=args.device,
+    #                      window_embed_size={'linguistic' : 256, 'emotient' : 128, 'acoustic' : 256})
+
     model = MultiCNNLSTM(mods=args.modalities, dims=mod_dimension, device=args.device,
                          window_embed_size=256)
 
@@ -475,7 +540,7 @@ if __name__ == "__main__":
                         help='sections to split each video into (default: 1)')
     parser.add_argument('--epochs', type=int, default=3000, metavar='N',
                         help='number of epochs to train (default: 1000)')
-    parser.add_argument('--lr', type=float, default=1e-3, metavar='LR',
+    parser.add_argument('--lr', type=float, default=1e-4, metavar='LR',
                         help='learning rate (default: 1e-6)')
     parser.add_argument('--sup_ratio', type=float, default=0.5, metavar='F',
                         help='teacher-forcing ratio (default: 0.5)')

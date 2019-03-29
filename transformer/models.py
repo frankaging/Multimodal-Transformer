@@ -80,10 +80,20 @@ class MultiCNNLSTM(nn.Module):
     def __init__(self, mods, dims, window_embed_size=256, k=3,
                  device=torch.device('cuda:0')):
         super(MultiCNNLSTM, self).__init__()
-        self.element_embed_size = dims[mods[0]]
-        self.CNN = CNN(self.element_embed_size, window_embed_size, k)
-        self.Highway = Highway(window_embed_size)
-        self.LSTM = NLPTransformer(window_embed_size)
+        # init
+        self.mods = mods
+        self.dims = dims
+        self.CNN = dict()
+        self.Highway = dict()
+        self.window_embed_size={'linguistic' : 256, 'emotient' : 128, 'acoustic' : 256}
+        total_embed_size = 0
+        for mod in mods:
+            self.CNN[mod] = CNN(dims[mod], self.window_embed_size[mod], k)
+            self.Highway[mod] = Highway(self.window_embed_size[mod])
+            total_embed_size += self.window_embed_size[mod]
+            self.add_module('cnn_{}'.format(mod), self.CNN[mod])
+            self.add_module('highway_{}'.format(mod), self.Highway[mod])
+        self.LSTM = NLPTransformer(total_embed_size)
         self.dropout = nn.Dropout(p=0.3)
         # Store module in specified device (CUDA/CPU)
         self.device = (device if torch.cuda.is_available() else
@@ -94,18 +104,23 @@ class MultiCNNLSTM(nn.Module):
         '''
         inputs = (batch_size, 39, 33, 300)
         '''
-        # print(inputs[0])
-        combined_outputs = []
-        for x in torch.split(inputs, 1, 0):
-            x = torch.squeeze(x, 0) # input -> (39, 33, 300)
-            # print(x.size())
-            cnnOut = self.CNN(x.permute(0, 2, 1)) # -> (39, 128)
-            # print(cnnOut)
-            x_highway = self.Highway(cnnOut)
-            x_word_emb = self.dropout(x_highway)
-            combined_outputs.append(x_word_emb)
-        combined_outputs = torch.stack(combined_outputs, dim=0) # -> (batch_size, 39, 128)
-        predict = self.LSTM(combined_outputs, mask, length)
+        outputs = []
+        for mod in self.mods:
+            inputs_mod = inputs[mod]
+            outputs_mod = []
+            for x in torch.split(inputs_mod, 1, 0):
+                x = torch.squeeze(x, 0) # input -> (39, 33, 300)
+                cnnOut = self.CNN[mod](x.permute(0, 2, 1)) # -> (39, 128)
+                x_highway = self.Highway[mod](cnnOut)
+                x_word_emb = self.dropout(x_highway)
+                outputs_mod.append(x_word_emb)
+            outputs_mod = torch.stack(outputs_mod, dim=0)
+            outputs.append(outputs_mod)
+        if len(outputs) > 1:
+            outputs = torch.cat(outputs, 2)
+        else:
+            outputs = outputs[0]   
+        predict = self.LSTM(outputs, mask, length)
         return predict
 
 class MultiLSTM(nn.Module):

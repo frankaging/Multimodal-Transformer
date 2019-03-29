@@ -93,6 +93,9 @@ class MultiseqDataset(Dataset):
                     d = pd.read_csv(fp, sep='\t')
                     d = np.array(preprocess[m](d))
                     seq_len = len(d)
+                elif re.match("^.*\.ssv", fp):
+                    d = pd.read_csv(fp, delim_whitespace=True)
+                    d = np.array(preprocess[m](d))
                 # Flatten inputs
                 if len(d.shape) > 2:
                     d = d.reshape(d.shape[0], -1)
@@ -245,6 +248,8 @@ def load_dataset(modalities, base_dir, subset,
         'emotient_timer': os.path.join(base_dir, 'features', subset, 'emotient'),
         'ratings' : os.path.join(base_dir, 'ratings', subset, 'observer_avg'),
         'ratings_timer' : os.path.join(base_dir, 'ratings', subset, 'observer_avg'),
+        'image': os.path.join(base_dir, 'features', subset, 'image'),
+        'image_timer': os.path.join(base_dir, 'features', subset, 'image')
     }
     regex = {
         'linguistic': "ID(\d+)_vid(\d+)_.*\.tsv",
@@ -252,7 +257,9 @@ def load_dataset(modalities, base_dir, subset,
         'emotient': "ID(\d+)_vid(\d+)_.*\.txt",
         'emotient_timer': "ID(\d+)_vid(\d+)_.*\.txt",
         'ratings' : "results_(\d+)_(\d+)\.csv",
-        'ratings_timer' : "results_(\d+)_(\d+)\.csv"
+        'ratings_timer' : "results_(\d+)_(\d+)\.csv",
+        'image': "ID(\d+)_vid(\d+)_.*\.ssv",
+        'image_timer': "ID(\d+)_vid(\d+)_.*\.ssv"
     }
     rates = {'acoustic': 2, 'linguistic': 2, 'emotient': 30, 'emotient_timer': 30, 'ratings': 2, 'linguistic_timer' : 2}
     preprocess = {
@@ -262,6 +269,8 @@ def load_dataset(modalities, base_dir, subset,
         'emotient': lambda df : df.loc[:,'AU1':'AU43'],
         'ratings' : lambda df : df.drop(columns=['time']) / 100.0,
         'ratings_timer' : lambda df : df.loc[:,'time'],
+        'image': lambda df : df.loc[:,'pixel0':'pixel9999'],
+        'image_timer': lambda df : df.loc[:,['Frametime']],
     }
     if 'ratings' not in modalities:
         modalities = modalities + ['ratings']
@@ -271,6 +280,8 @@ def load_dataset(modalities, base_dir, subset,
         modalities = modalities + ['emotient_timer']
     if 'linguistic' in modalities:
         modalities = modalities + ['linguistic_timer']
+    if 'image' in modalities:
+        modalities = modalities + ['image_timer']
 
     return MultiseqDataset(modalities, [dirs[m] for m in modalities],
                            [regex[m] for m in modalities],
