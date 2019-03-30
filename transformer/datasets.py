@@ -1,20 +1,20 @@
 from __future__ import division
 from __future__ import print_function
 from __future__ import absolute_import
- 
+
 import os, re, copy, itertools
 import pandas as pd
 import numpy as np
 import torch
 from torch.utils.data import Dataset
- 
+
 class MultiseqDataset(Dataset):
     """Multimodal dataset for (synchronous) time series and sequential data."""
- 
+
     def __init__(self, modalities, dirs, regex, preprocess,
                  base_rate=None, truncate=False, item_as_dict=False):
         """Loads valence ratings and features for each modality.
- 
+
         modalities -- names of each input modality
         dirs -- list of directories containing input features
         regex -- regex patterns for the filenames of each modality
@@ -32,7 +32,7 @@ class MultiseqDataset(Dataset):
         #     self.rates = rates
         # self.base_rate = base_rate if base_rate != None else min(self.rates)
         self.item_as_dict = item_as_dict
- 
+
         # Convert to modality-indexed dictionaries
         dirs = {m: d for m, d in zip(modalities, dirs)}
         if type(regex) is not list:
@@ -43,7 +43,7 @@ class MultiseqDataset(Dataset):
         if type(preprocess) is not list:
             preprocess = [preprocess] * len(self.modalities)
         preprocess = {m: p for m, p in zip(modalities, preprocess)}
- 
+
         # Load filenames into lists and extract regex-captured sequence IDs
         paths = dict()
         seq_ids = dict()
@@ -59,7 +59,7 @@ class MultiseqDataset(Dataset):
             # Sort by values of captured indices
             paths[m] = [p for _, p in sorted(zip(seq_ids[m], paths[m]))]
             seq_ids[m].sort()
- 
+
         # Check that number and IDs of files/sequences are matched
         self.seq_ids = seq_ids[modalities[0]]
         for m in modalities:
@@ -68,11 +68,11 @@ class MultiseqDataset(Dataset):
                                 format(len(paths[m])))
             if seq_ids[m] != self.seq_ids:
                 raise Exception("Sequence IDs do not match.")
- 
+
         # # Compute ratio to base rate
         # self.ratios = {m: r/self.base_rate for m, r in
         #                zip(self.modalities, self.rates)}
- 
+
         # Load data from files
         self.data = {m: [] for m in modalities}
         self.orig = {m: [] for m in modalities}
@@ -119,16 +119,16 @@ class MultiseqDataset(Dataset):
                 #     d = np.repeat(d, ratio, axis=0)
                 data.append(d.tolist())
                 # if len(d) < seq_len:
-                 
+
             # Truncate to minimum sequence length
             # if truncate:
             #     for m in self.modalities:
             #         self.data[m][-1] = self.data[m][-1][:seq_len]
             self.lengths.append(seq_len)
- 
+
     def __len__(self):
         return len(self.seq_ids)
- 
+
     def __getitem__(self, i):
         if self.item_as_dict:
             d = {m: self.data[m][i] for m in self.modalities}
@@ -136,7 +136,7 @@ class MultiseqDataset(Dataset):
             return d
         else:
             return tuple(self.data[m][i] for m in self.modalities)
- 
+
     def normalize_(self):
         """Rescale all inputs to [-1, 1] range (in-place)."""
         # Find max and min for each dimension of each modality
@@ -152,13 +152,13 @@ class MultiseqDataset(Dataset):
         for m in self.modalities:
             self.data[m] = [(a-m_min[m]) / m_rng[m] * 2 - 1 for
                                a in self.data[m]]
- 
+
     def normalize(self):
         """Rescale all inputs to [-1, 1] range (returns new dataset)."""
         dataset = copy.deepcopy(self)
         dataset.normalize_()
         return dataset
- 
+
     def split_(self, n):
         """Splits each sequence into n chunks (in place)."""
         for m in self.modalities:
@@ -167,13 +167,13 @@ class MultiseqDataset(Dataset):
         self.seq_ids = list(itertools.chain.from_iterable(
             [[i] * n for i in self.seq_ids]))
         self.lengths = [len(d) for d in self.data[self.modalities[0]]]
- 
+
     def split(self, n):
         """Splits each sequence into n chunks (returns new dataset)."""
         dataset = copy.deepcopy(self)
         dataset.split_(n)
         return dataset
- 
+
     @classmethod
     def merge(cls, set1, set2):
         """Merge two datasets."""
@@ -189,13 +189,13 @@ class MultiseqDataset(Dataset):
         for m in merged.modalities:
             merged.data[m] += copy.deepcopy(set2.data[m])
         return merged
- 
+
 def len_to_mask(lengths):
     """Converts list of sequence lengths to a mask tensor."""
     mask = torch.arange(max(lengths)).expand(len(lengths), max(lengths))
     mask = mask < torch.tensor(lengths).unsqueeze(1)
     return mask.unsqueeze(-1)
- 
+
 def pad_and_merge(sequences, max_len=None):
     """Pads and merges unequal length sequences into batch tensor."""
     dims = sequences[0].shape[1]
@@ -209,7 +209,7 @@ def pad_and_merge(sequences, max_len=None):
     if len(sequences) == 1:
         padded_seqs = padded_seqs.float()
     return padded_seqs
- 
+
 def seq_collate(data):
     """Collates multimodal variable length sequences into padded batch."""
     padded = []
@@ -225,7 +225,7 @@ def seq_collate(data):
         padded.append(pad_and_merge(modality, max(lengths)))
     mask = len_to_mask(lengths)
     return tuple(padded + [mask, lengths])
- 
+
 def seq_collate_dict(data):
     """Collate that accepts and returns dictionaries."""
     batch = {}
@@ -237,7 +237,7 @@ def seq_collate_dict(data):
         batch[m] = pad_and_merge(m_data, max(lengths))
     mask = len_to_mask(lengths)
     return batch, mask, lengths
- 
+
 def load_dataset(modalities, base_dir, subset,
                  base_rate=2.0, truncate=False, item_as_dict=False):
     """Helper function specifically for loading TAC-EA datasets."""
@@ -267,7 +267,7 @@ def load_dataset(modalities, base_dir, subset,
         'linguistic': lambda df : df.loc[:,'glove0':'glove299'],
         'emotient_timer': lambda df : df.loc[:,'Frametime'],
         'emotient': lambda df : df.loc[:,'AU1':'AU43'],
-        'ratings' : lambda df : df.drop(columns=['time']) / 100.0,
+        'ratings' : lambda df : df.drop(columns=['time']) / 10.0,
         'ratings_timer' : lambda df : df.loc[:,'time'],
         'image': lambda df : df.loc[:,'pixel0':'pixel9999'],
         'image_timer': lambda df : df.loc[:,['Frametime']],
@@ -287,7 +287,7 @@ def load_dataset(modalities, base_dir, subset,
                            [regex[m] for m in modalities],
                            [preprocess[m] for m in modalities],
                            base_rate, truncate, item_as_dict)
- 
+
 if __name__ == "__main__":
     # Test code by loading dataset
     import argparse
@@ -297,7 +297,7 @@ if __name__ == "__main__":
     parser.add_argument('--subset', type=str, default="Train",
                         help='whether to load Train/Valid/Test data')
     args = parser.parse_args()
- 
+
     print("Loading data...")
     modalities = ['acoustic', 'linguistic', 'emotient', 'ratings']
     dataset = load_dataset(modalities, args.dir, args.subset)

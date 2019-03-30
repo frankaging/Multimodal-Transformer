@@ -301,7 +301,7 @@ def save_params(args, model, train_stats, test_stats):
         df['ar_order'] = [float('nan')]
     df.set_index('model')
     df.to_csv(fname, mode='a', header=(not os.path.exists(fname)), sep='\t')
-        
+
 def save_checkpoint(modalities, model, path):
     checkpoint = {'modalities': modalities, 'model': model.state_dict()}
     torch.save(checkpoint, path)
@@ -489,7 +489,7 @@ def main(args):
     input_features_test, ratings_test = constructInput(test_data, channels=args.modalities, window_size=window_size)
     input_padded_test, seq_lens_test = padInput(input_features_test, args.modalities, mod_dimension)
     ratings_padded_test = padRating(ratings_test, max(seq_lens_test))
-    
+
     # TODO: could remove this if accept dictionary inputs
     # input_padded_train = {'linguistic' : [117*39*33*300], 'emotient' : []}
     input_train = input_padded_train
@@ -518,7 +518,7 @@ def main(args):
                              model, criterion, args)
             if stats['ccc'] > best_ccc:
                 best_ccc = stats['ccc']
-                path = os.path.join("./lstm_save", 'multiTransformer_best.pth') 
+                path = os.path.join("./lstm_save", 'multiTransformer_best.pth')
                 save_checkpoint(args.modalities, model, path)
             if stats['max_ccc'] > single_best_ccc:
                 single_best_ccc = stats['max_ccc']
@@ -540,9 +540,9 @@ if __name__ == "__main__":
                         help='input batch size for training (default: 10)')
     parser.add_argument('--split', type=int, default=1, metavar='N',
                         help='sections to split each video into (default: 1)')
-    parser.add_argument('--epochs', type=int, default=3000, metavar='N',
+    parser.add_argument('--epochs', type=int, default=9999, metavar='N',
                         help='number of epochs to train (default: 1000)')
-    parser.add_argument('--lr', type=float, default=1e-4, metavar='LR',
+    parser.add_argument('--lr', type=float, default=1e-3, metavar='LR',
                         help='learning rate (default: 1e-6)')
     parser.add_argument('--sup_ratio', type=float, default=0.5, metavar='F',
                         help='teacher-forcing ratio (default: 0.5)')
