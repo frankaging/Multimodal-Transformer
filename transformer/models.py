@@ -88,7 +88,7 @@ class Highway(nn.Module):
 	def __init__(self, word_embed_size):
 		"""
         Init the Highway
-        @param word_embed_size (int): Embedding size (dimensionality) for the output 
+        @param word_embed_size (int): Embedding size (dimensionality) for the output
         """
 		super(Highway, self).__init__()
 		# TODO:
@@ -137,7 +137,7 @@ class CNN(nn.Module):
         return x_conv_out
 
 class MultiCNNLSTM(nn.Module):
-    def __init__(self, mods, dims, window_embed_size=256, k=3,
+    def __init__(self, mods, dims, fuse_embed_size=256, k=3,
                  device=torch.device('cuda:0')):
         super(MultiCNNLSTM, self).__init__()
         # init
@@ -155,7 +155,11 @@ class MultiCNNLSTM(nn.Module):
                 self.add_module('highway_{}'.format(mod), self.Highway[mod])
             total_embed_size += self.window_embed_size[mod]
         self.VGG = VGG16()
-        self.LSTM = NLPTransformer(total_embed_size)
+        self.fusionLayer = nn.Linear(total_embed_size, fuse_embed_size)
+        if len(mods) > 1:
+            self.LSTM = NLPTransformer(fuse_embed_size)
+        else:
+            self.LSTM = NLPTransformer(total_embed_size)
         self.dropout = nn.Dropout(p=0.3)
         # Store module in specified device (CUDA/CPU)
         self.device = (device if torch.cuda.is_available() else
@@ -182,19 +186,23 @@ class MultiCNNLSTM(nn.Module):
                 outputs_mod = torch.stack(outputs_mod, dim=0) # -> (batch_size, seq_l, 256)
             else:
                 for x in torch.split(inputs_mod, 1, 0):
+                    print('current memory allocated: {}'.format(torch.cuda.memory_allocated() / 1024 ** 2))
+                    print('max memory allocated: {}'.format(torch.cuda.max_memory_allocated() / 1024 ** 2))
+                    print('cached memory: {}'.format(torch.cuda.memory_cached() / 1024 ** 2))
                     x = torch.squeeze(x, 0) # input -> (39, 33, 300)
                     cnnOut = self.CNN[mod](x.permute(0, 2, 1)) # -> (39, 128)
                     x_highway = self.Highway[mod](cnnOut)
                     x_word_emb = self.dropout(x_highway)
                     outputs_mod.append(x_word_emb)
                 outputs_mod = torch.stack(outputs_mod, dim=0)
-                
+
             outputs.append(outputs_mod)
         if len(outputs) > 1:
             outputs = torch.cat(outputs, 2)
+            fused_outputs = torch.tanh(self.fusionLayer(outputs))
         else:
-            outputs = outputs[0]   
-        predict = self.LSTM(outputs, mask, length)
+            fused_outputs = outputs[0]
+        predict = self.LSTM(fused_outputs, mask, length)
         return predict
 
 class MultiLSTM(nn.Module):

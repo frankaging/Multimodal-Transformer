@@ -41,3 +41,4 @@ transformer/lstm_save/
 data_hidden/
 transformer/__pycache__/
 .dropbox
+transformer/log_save/

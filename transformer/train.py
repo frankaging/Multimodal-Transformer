@@ -163,12 +163,13 @@ def train(input_data, input_target, lengths, model, criterion, optimizer, epoch,
                                                             input_target,
                                                             lengths,
                                                             args):
+
         # send to device
         mask = mask.to(args.device)
         # send all data to the device
         for mod in list(data.keys()):
+            # print(mod)
             data[mod] = data[mod].to(args.device)
-
         target = target.to(args.device)
         # lengths = lengths.to(args.device)
         # Run forward pass.
@@ -188,6 +189,8 @@ def train(input_data, input_target, lengths, model, criterion, optimizer, epoch,
         logger.info('Batch: {:5d}\tLoss: {:2.5f}'.\
               format(batch_num, loss/data_num))
         batch_num += 1
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
     # Average losses and print
     loss /= data_num
     logger.info('---')
@@ -243,6 +246,8 @@ def evaluate(input_data, input_target, lengths, model, criterion, args, fig_path
             local_best_target = target
             local_best_index = index
             local_best_ccc = curr_ccc
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
     # Average losses and print
     loss /= data_num
     # Average statistics and print
@@ -321,7 +326,7 @@ def load_data(modalities, data_dir):
     print("Done.")
     return train_data, test_data
 
-def videoInputHelper(input_data, window_size, channel, old_version=False):
+def videoInputHelper(input_data, window_size, channel):
     # channel features
     vectors_raw = input_data[channel]
     ts = input_data[channel+"_timer"]
@@ -336,40 +341,32 @@ def videoInputHelper(input_data, window_size, channel, old_version=False):
                 inner_vec.append(v)
         vectors.append(inner_vec)
 
+    #  get the window size and repeat rate if oversample is needed
+    oversample = int(window_size[channel]/window_size['ratings'])
+    window_size = window_size[channel]
+
     video_vs = []
-    if not old_version:
-        count_v = 0
-        current_time = 0.0
-        window_vs = []
-        while count_v < len(vectors):
-            t = ts[count_v]
-            if type(t) == list:
-                t = t[0]
-            if t <= current_time + window_size:
+    count_v = 0
+    current_time = 0.0
+    window_vs = []
+    while count_v < len(vectors):
+        t = ts[count_v]
+        if type(t) == list:
+            t = t[0]
+        if t <= current_time + window_size:
+            for i in range(0, oversample):
                 window_vs.append(vectors[count_v])
-                count_v += 1
-            else:
-                video_vs.append(window_vs)
-                window_vs = []
-                current_time += window_size
-    else:
-        count_v = 0
-        current_time = 0.0
-        window_vs = []
-        for vec in vectors:
-            offset = ts[count_v]
-            if offset <= current_time + window_size:
-                window_vs.append(vec)
-            else:
-                video_vs.append(window_vs)
-                window_vs = [vec]
-                current_time += window_size
             count_v += 1
+        else:
+            video_vs.append(window_vs)
+            window_vs = []
+            current_time += window_size
 
     return video_vs
 
 def ratingInputHelper(input_data, window_size):
     # ratings
+    window_size = window_size['ratings']
     ratings = input_data['ratings']
     video_rs = []
     window_size_c = window_size/0.5
@@ -472,15 +469,19 @@ def main(args):
     torch.cuda.manual_seed(1)
     np.random.seed(1)
 
+    # clear memory
+    if torch.cuda.is_available():
+        torch.cuda.empty_cache()
     # Convert device string to torch.device
     args.device = (torch.device(args.device) if torch.cuda.is_available()
                    else torch.device('cpu'))
-    args.modalities = ['linguistic', 'emotient']
+    args.modalities = ['emotient']
     mod_dimension = {'linguistic' : 300, 'emotient' : 20, 'acoustic' : 988, 'image' : 10000}
     # Load data for specified modalities
     train_data, test_data = load_data(args.modalities, args.data_dir)
-    # setting
-    window_size = 5
+    # setting the time window rate
+    # ratings sample rate is the base rate
+    window_size = {'linguistic' : 5, 'emotient' : 1, 'acoustic' : 1, 'image' : 1, 'ratings' : 1}
     # training data
     input_features_train, ratings_train = constructInput(train_data, channels=args.modalities, window_size=window_size)
     input_padded_train, seq_lens_train = padInput(input_features_train, args.modalities, mod_dimension)
@@ -498,8 +499,7 @@ def main(args):
     # model = MultiCNNLSTM(mods=args.modalities, dims=mod_dimension, device=args.device,
     #                      window_embed_size={'linguistic' : 256, 'emotient' : 128, 'acoustic' : 256})
 
-    model = MultiCNNLSTM(mods=args.modalities, dims=mod_dimension, device=args.device,
-                         window_embed_size=256)
+    model = MultiCNNLSTM(mods=args.modalities, dims=mod_dimension, device=args.device)
 
     criterion = nn.MSELoss(reduction='sum')
     optimizer = optim.Adam(model.parameters(), lr=args.lr, weight_decay=1e-4)
