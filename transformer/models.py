@@ -64,7 +64,7 @@ class VGG16(nn.Module):
                         nn.MaxPool2d(kernel_size=2, stride=2),
         )
         self.classifier = nn.Sequential(
-                            nn.Linear(512 * 3 * 3, 4096),
+                            nn.Linear(512, 4096),
                             nn.ReLU(inplace=True),
                             nn.Dropout(),
                             nn.Linear(4096, 4096),
@@ -155,6 +155,7 @@ class MultiCNNLSTM(nn.Module):
                 self.add_module('highway_{}'.format(mod), self.Highway[mod])
             total_embed_size += self.window_embed_size[mod]
         self.VGG = VGG16()
+        self.VGG_CNN = CNN(word_embed_size = 10, window_embed_size=self.window_embed_size['image'])     # TODO: variable input length?
         self.fusionLayer = nn.Linear(total_embed_size, fuse_embed_size)
         if len(mods) > 1:
             self.LSTM = NLPTransformer(fuse_embed_size)
@@ -175,20 +176,22 @@ class MultiCNNLSTM(nn.Module):
             inputs_mod = inputs[mod]
             outputs_mod = []
             if mod == 'image':
-                for x in torch.split(inputs_mod, 1, 0):  # input -> (batch_size, 39, 33, 10000)
+                for x in torch.split(inputs_mod, 1, 0):  # input -> (batch_size, ~199, 2, 2500)
                     # print(x.size())
-                    x = torch.squeeze(x, 0) # input -> (39, ~max window, 10000)
+                    x = torch.squeeze(x, 0) # input -> (~199, 2, 2500)
                     # print(x.size())
-                    x = x.reshape(-1, 1, 100, 100)
-                    vggout = self.VGG(x) # -> (39, 256)
+                    x = x.reshape(-1, 1, 50, 50)
+                    vggout = self.VGG(x) # -> (~398, 256)
                     # print(vggout.size())
+                    # vggout = vggout.reshape(-1, 10, self.window_embed_size['image']) # -> (~199, 2, 256)
+                    # vggout = self.VGG_CNN(vggout)   # -> (~199, 256)
                     outputs_mod.append(vggout)
-                outputs_mod = torch.stack(outputs_mod, dim=0) # -> (batch_size, seq_l, 256)
+                outputs_mod = torch.stack(outputs_mod, dim=0) # -> (batch_size, ~199, 256)
             else:
                 for x in torch.split(inputs_mod, 1, 0):
-                    print('current memory allocated: {}'.format(torch.cuda.memory_allocated() / 1024 ** 2))
-                    print('max memory allocated: {}'.format(torch.cuda.max_memory_allocated() / 1024 ** 2))
-                    print('cached memory: {}'.format(torch.cuda.memory_cached() / 1024 ** 2))
+                    # print('current memory allocated: {}'.format(torch.cuda.memory_allocated() / 1024 ** 2))
+                    # print('max memory allocated: {}'.format(torch.cuda.max_memory_allocated() / 1024 ** 2))
+                    # print('cached memory: {}'.format(torch.cuda.memory_cached() / 1024 ** 2))
                     x = torch.squeeze(x, 0) # input -> (39, 33, 300)
                     cnnOut = self.CNN[mod](x.permute(0, 2, 1)) # -> (39, 128)
                     x_highway = self.Highway[mod](cnnOut)

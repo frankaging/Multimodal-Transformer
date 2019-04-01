@@ -67,56 +67,10 @@ def generateInputChunkHelper(data_chunk, length_chunk):
     data_sort_t = torch.tensor(data_sort, dtype=torch.float)
     return data_sort_t
 
-
-# def generateTrainBatch(input_data, input_target, input_length, args, batch_size=25):
-#     # TODO: support input_data as a dictionary
-#     # (data, target, mask, lengths)
-#     input_size = len(input_data)
-#     index = [i for i in range(0, input_size)]
-#     shuffle(index)
-#     shuffle_chunks = [i for i in chunks(index, batch_size)]
-#     for chunk in shuffle_chunks:
-#         data_chunk = [input_data[index] for index in chunk] # <- ~batch_size, x, y, z
-#         target_chunk = [input_target[index] for index in chunk] # <- ~batch_size, x
-#         length_chunk = [input_length[index] for index in chunk] # <- ~batch_size
-#         # print(length_chunk)
-
-#         max_length = max(length_chunk)
-
-#         combined_data = list(zip(data_chunk, length_chunk))
-#         combined_data.sort(key=itemgetter(1),reverse=True)
-#         combined_rating = list(zip(target_chunk, length_chunk))
-#         combined_rating.sort(key=itemgetter(1),reverse=True)
-#         data_sort = []
-#         target_sort = []
-#         length_sort = []
-#         for pair in combined_data:
-#             data_sort.append(pair[0])
-#             length_sort.append(pair[1])
-
-#         for pair in combined_rating:
-#             target_sort.append(pair[0])
-
-#         data_sort = torch.tensor(data_sort, dtype=torch.float)
-#         target_sort = torch.tensor(target_sort, dtype=torch.float)
-#         old_length_sort = copy.deepcopy(length_sort)
-#         length_sort = torch.tensor(length_sort)
-#         data_sort = data_sort[:,:max_length,:,:]
-#         target_sort = target_sort[:,:max_length]
-
-#         lstm_masks = torch.zeros(data_sort.size()[0], data_sort.size()[1], 1, dtype=torch.float)
-#         for i in range(lstm_masks.size()[0]):
-#             lstm_masks[i,:old_length_sort[i]] = 1
-#         # print(lstm_masks.size())
-#         # print(data_sort.size())
-#         # print(target_sort.size())
-#         # length_sort = torch.tensor(length_sort, dtype=torch.float)
-#         yield (data_sort, torch.unsqueeze(target_sort, dim=2), lstm_masks, old_length_sort)
-
 '''
 yielding training batch for the training process
 '''
-def generateTrainBatch(input_data, input_target, input_length, args, batch_size=25):
+def generateTrainBatch(input_data, input_target, input_length, args, batch_size=20):
     # TODO: support input_data as a dictionary
     # get chunk
     input_size = len(input_data[list(input_data.keys())[0]]) # all values have same size
@@ -361,7 +315,11 @@ def videoInputHelper(input_data, window_size, channel):
             video_vs.append(window_vs)
             window_vs = []
             current_time += window_size
-
+    # TODO: we are only taking average from each window for image
+    if channel == 'image':
+        data = np.asarray(video_vs)
+        data = np.average(data, axis=1)
+        video_vs = np.expand_dims(data, axis=1).tolist()
     return video_vs
 
 def ratingInputHelper(input_data, window_size):
@@ -475,13 +433,13 @@ def main(args):
     # Convert device string to torch.device
     args.device = (torch.device(args.device) if torch.cuda.is_available()
                    else torch.device('cpu'))
-    args.modalities = ['emotient']
-    mod_dimension = {'linguistic' : 300, 'emotient' : 20, 'acoustic' : 988, 'image' : 10000}
+    args.modalities = ['image']
+    mod_dimension = {'linguistic' : 300, 'emotient' : 20, 'acoustic' : 988, 'image' : 2500}
     # Load data for specified modalities
     train_data, test_data = load_data(args.modalities, args.data_dir)
     # setting the time window rate
     # ratings sample rate is the base rate
-    window_size = {'linguistic' : 5, 'emotient' : 1, 'acoustic' : 1, 'image' : 1, 'ratings' : 1}
+    window_size = {'linguistic' : 5, 'emotient' : 5, 'acoustic' : 5, 'image' : 5, 'ratings' : 5}
     # training data
     input_features_train, ratings_train = constructInput(train_data, channels=args.modalities, window_size=window_size)
     input_padded_train, seq_lens_train = padInput(input_features_train, args.modalities, mod_dimension)

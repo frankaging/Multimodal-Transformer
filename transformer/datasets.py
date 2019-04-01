@@ -273,7 +273,7 @@ def load_dataset(modalities, base_dir, subset,
         'emotient': lambda df : df.loc[:,'AU1':'AU43'],
         'ratings' : lambda df : df.drop(columns=['time']) / 10.0,
         'ratings_timer' : lambda df : df.loc[:,'time'],
-        'image': lambda df : df.loc[:,'pixel0':'pixel9999'],
+        'image': lambda df : df.loc[:,'pixel0':'pixel2499'],
         'image_timer': lambda df : df.loc[:,['Frametime']],
         'acoustic': lambda df : df.loc[:,' pcm_intensity_sma_max':' F0env_sma_de_iqr1-3'],
         'acoustic_timer': lambda df : df.loc[:,' frameTime']
