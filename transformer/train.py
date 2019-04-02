@@ -70,7 +70,7 @@ def generateInputChunkHelper(data_chunk, length_chunk):
 '''
 yielding training batch for the training process
 '''
-def generateTrainBatch(input_data, input_target, input_length, args, batch_size=20):
+def generateTrainBatch(input_data, input_target, input_length, args, batch_size=25):
     # TODO: support input_data as a dictionary
     # get chunk
     input_size = len(input_data[list(input_data.keys())[0]]) # all values have same size
@@ -150,6 +150,47 @@ def train(input_data, input_target, lengths, model, criterion, optimizer, epoch,
     logger.info('---')
     logger.info('Epoch: {}\tLoss: {:2.5f}'.format(epoch, loss))
     return loss
+
+def evaluateOnEval(input_data, input_target, lengths, model, criterion, args, fig_path=None):
+    model.eval()
+    predictions = []
+    actuals = []
+    data_num = 0
+    loss, ccc = 0.0, []
+    count = 0
+    index = 0
+    for (data, target, mask, lengths) in generateTrainBatch(input_data,
+                                                            input_target,
+                                                            lengths,
+                                                            args,
+                                                            batch_size=1):
+        # send to device
+        mask = mask.to(args.device)
+        # send all data to the device
+        for mod in list(data.keys()):
+            data[mod] = data[mod].to(args.device)
+        target = target.to(args.device)
+        # Run forward pass
+        output = model(data, lengths, mask)
+        predictions.append(output.reshape(-1).tolist())
+        actuals.append(target.reshape(-1).tolist())
+        # Compute loss
+        loss += criterion(output, target)
+        # Keep track of total number of time-points
+        data_num += sum(lengths)
+        # Compute correlation and CCC of predictions against ratings
+        output = torch.squeeze(torch.squeeze(output, dim=2), dim=0).cpu().detach().numpy()
+        target = torch.squeeze(torch.squeeze(target, dim=2), dim=0).cpu().detach().numpy()
+        if count == 0:
+            # print(output)
+            # print(target)
+            count += 1
+        curr_ccc = eval_ccc(output, target)
+        ccc.append(curr_ccc)
+        index += 1
+    # Average losses and print
+    loss /= data_num
+    return ccc, predictions, actuals
 
 def evaluate(input_data, input_target, lengths, model, criterion, args, fig_path=None):
 
@@ -233,6 +274,35 @@ def plot_predictions(dataset, predictions, metric, args, fig_path=None):
         plt.savefig(fig_path)
     plt.pause(1.0 if args.test else 0.001)
 
+def plot_eval(pred_sort, ccc_sort, actual_sort, window_size=1):
+    sub_graph_count = len(pred_sort)
+    fig = plt.figure()
+    fig.subplots_adjust(hspace=0.4, wspace=0.4)
+
+    for i in range(1, 7):
+        ax = fig.add_subplot(2, 3, i)
+
+        ccc = ccc_sort[i-1]
+        pred = pred_sort[i-1]
+        actual = actual_sort[i-1]
+        minL = min(len(pred), len(actual))
+        pred = pred[:minL]
+        actual = actual[:minL]
+        t = []
+        curr_t = 0.0
+        for i in pred:
+            t.append(curr_t)
+            curr_t += window_size
+        pred_line, = ax.plot(t, pred, '-' , color='r', linewidth=2.0, label='Prediction')
+        ax.legend()
+        actual_line, = ax.plot(t, actual, '-', color='b', linewidth=2.0, label='True')
+        ax.legend()
+        ax.set_ylabel('valence(0-10)')
+        ax.set_xlabel('time(s)')
+        ax.set_title('ccc='+str(ccc)[:5])
+    plt.show()
+    # plt.savefig("./lstm_save/top_ccc.png")
+
 def save_predictions(dataset, predictions, path):
     for p, seq_id in zip(predictions, dataset.seq_ids):
         df = pd.DataFrame(p, columns=['rating'])
@@ -261,24 +331,30 @@ def save_params(args, model, train_stats, test_stats):
     df.set_index('model')
     df.to_csv(fname, mode='a', header=(not os.path.exists(fname)), sep='\t')
 
-def save_checkpoint(modalities, model, path):
-    checkpoint = {'modalities': modalities, 'model': model.state_dict()}
+def save_checkpoint(modalities, mod_dimension, window_size, model, path):
+    checkpoint = {'modalities': modalities, 'mod_dimension' : mod_dimension, 'window_size' : window_size, 'model': model.state_dict()}
     torch.save(checkpoint, path)
 
 def load_checkpoint(path, device):
     checkpoint = torch.load(path, map_location=device)
     return checkpoint
 
-def load_data(modalities, data_dir):
+def load_data(modalities, data_dir, eval_dir=None):
     print("Loading data...")
-    train_data = load_dataset(modalities, data_dir, 'Train',
-                              base_rate=args.base_rate,
-                              truncate=True, item_as_dict=True)
-    test_data = load_dataset(modalities, data_dir, 'Valid',
+    if eval_dir == None:
+        train_data = load_dataset(modalities, data_dir, 'Train',
+                                base_rate=args.base_rate,
+                                truncate=True, item_as_dict=True)
+        test_data = load_dataset(modalities, data_dir, 'Valid',
+                                base_rate=args.base_rate,
+                                truncate=True, item_as_dict=True)
+        print("Done.")
+        return train_data, test_data
+    eval_data = load_dataset(modalities, data_dir, eval_dir,
                              base_rate=args.base_rate,
                              truncate=True, item_as_dict=True)
-    print("Done.")
-    return train_data, test_data
+    print("Loading Eval Set Done.")
+    return eval_data
 
 def videoInputHelper(input_data, window_size, channel):
     # channel features
@@ -308,11 +384,11 @@ def videoInputHelper(input_data, window_size, channel):
         if type(t) == list:
             t = t[0]
         if t <= current_time + window_size:
-            for i in range(0, oversample):
-                window_vs.append(vectors[count_v])
+            window_vs.append(vectors[count_v])
             count_v += 1
         else:
-            video_vs.append(window_vs)
+            for i in range(0, oversample):
+                video_vs.append(window_vs)
             window_vs = []
             current_time += window_size
     # TODO: we are only taking average from each window for image
@@ -323,17 +399,24 @@ def videoInputHelper(input_data, window_size, channel):
     return video_vs
 
 def ratingInputHelper(input_data, window_size):
-    # ratings
-    window_size = window_size['ratings']
     ratings = input_data['ratings']
+    ts = input_data['ratings_timer']
+    window_size = window_size['ratings']
+
+    current_time = 0.0
+    count_r = 0
+    window_rs = []
     video_rs = []
-    window_size_c = window_size/0.5
-    rating_sum = 0.0
-    for i in range(0, len(ratings)):
-        rating_sum += ratings[i][0]
-        if i != 0 and i%window_size_c == 0:
-            video_rs.append((rating_sum*1.0/window_size_c))
-            rating_sum = 0.0
+    while count_r < len(ratings):
+        t = ts[count_r]
+        if t <= current_time + window_size:
+            window_rs.append(ratings[count_r][0])
+            count_r += 1
+        else:
+            avg_r = sum(window_rs)*1.0/len(window_rs)
+            video_rs.append(avg_r)
+            window_rs = []
+            current_time += window_size
     return video_rs
 
 '''
@@ -347,12 +430,14 @@ def constructInput(input_data, window_size, channels):
         minL = 99999999
         for channel in channels:
             video_vs = videoInputHelper(data, window_size, channel)
+            # print("Channel: " + channel + " ; vector size: " + str(len(video_vs)))
             if channel not in ret_input_features.keys():
                 ret_input_features[channel] = []
             ret_input_features[channel].append(video_vs)
             if len(video_vs) < minL:
                 minL = len(video_vs)
         video_rs = ratingInputHelper(data, window_size)
+        # print("video_rs vector size: " + str(len(video_rs)))
         if len(video_rs) < minL:
             minL = len(video_rs)
         # concate
@@ -433,13 +518,68 @@ def main(args):
     # Convert device string to torch.device
     args.device = (torch.device(args.device) if torch.cuda.is_available()
                    else torch.device('cpu'))
-    args.modalities = ['image']
+
+    args.modalities = ['linguistic',  'emotient']
     mod_dimension = {'linguistic' : 300, 'emotient' : 20, 'acoustic' : 988, 'image' : 2500}
+    window_size = {'linguistic' : 5, 'emotient' : 1, 'acoustic' : 5, 'image' : 2.5, 'ratings' : 1}
+
+    # loss function define
+    criterion = nn.MSELoss(reduction='sum')
+
+    # TODO: case for only making prediction on eval/test set
+    if args.test or args.eval:
+        eval_dir = "Test"
+        if args.eval:
+            eval_dir = "Valid"
+        print("evaluating on the " + eval_dir + " Set.")
+        TOP_COUNT = 6
+        # this data will contain rating but will be excluded for usage
+        eval_data = load_data(args.modalities, args.data_dir, eval_dir)
+        input_features_eval, ratings_eval = constructInput(eval_data, channels=args.modalities, window_size=window_size)
+        input_padded_eval, seq_lens_eval = padInput(input_features_eval, args.modalities, mod_dimension)
+        ratings_padded_eval = padRating(ratings_eval, max(seq_lens_eval))
+        model_path = os.path.join("./lstm_save", "multiTransformer_best.pth")
+        checkpoint = load_checkpoint(model_path, args.device)
+        # load the testing parameters
+        args.modalities = checkpoint['modalities']
+        mod_dimension = checkpoint['mod_dimension']
+        window_size = checkpoint['window_size']
+        # construct model
+        model = MultiCNNLSTM(mods=args.modalities, dims=mod_dimension, device=args.device)
+        model.load_state_dict(checkpoint['model'])
+        ccc, pred, actuals = \
+            evaluateOnEval(input_padded_eval, ratings_padded_eval, seq_lens_eval,
+                           model, criterion, args)
+        # zip and get the top ccc
+        pred_ccc = list(zip(pred, ccc))
+        pred_ccc.sort(key=itemgetter(1),reverse=True)
+        pred_sort = []
+        ccc_sort = []
+        for pair in pred_ccc:
+            if len(pred_sort) == TOP_COUNT:
+                break
+            pred_sort.append(pair[0])
+            ccc_sort.append(pair[1])
+
+        actual_ccc = list(zip(actuals, ccc))
+        actual_ccc.sort(key=itemgetter(1),reverse=True)
+        actual_sort = []
+        for pair in actual_ccc:
+            if len(actual_sort) == TOP_COUNT:
+                break
+            actual_sort.append(pair[0])
+
+        # plot the top count prediction vs true
+        plot_eval(pred_sort, ccc_sort, actual_sort, window_size['ratings'])
+        return
+
+    # construct model
+    model = MultiCNNLSTM(mods=args.modalities, dims=mod_dimension, device=args.device)
+    # Setting the optimizer
+    optimizer = optim.Adam(model.parameters(), lr=args.lr, weight_decay=1e-4)
+
     # Load data for specified modalities
     train_data, test_data = load_data(args.modalities, args.data_dir)
-    # setting the time window rate
-    # ratings sample rate is the base rate
-    window_size = {'linguistic' : 5, 'emotient' : 5, 'acoustic' : 5, 'image' : 5, 'ratings' : 5}
     # training data
     input_features_train, ratings_train = constructInput(train_data, channels=args.modalities, window_size=window_size)
     input_padded_train, seq_lens_train = padInput(input_features_train, args.modalities, mod_dimension)
@@ -453,14 +593,6 @@ def main(args):
     # input_padded_train = {'linguistic' : [117*39*33*300], 'emotient' : []}
     input_train = input_padded_train
     input_test = input_padded_test
-    # construct model
-    # model = MultiCNNLSTM(mods=args.modalities, dims=mod_dimension, device=args.device,
-    #                      window_embed_size={'linguistic' : 256, 'emotient' : 128, 'acoustic' : 256})
-
-    model = MultiCNNLSTM(mods=args.modalities, dims=mod_dimension, device=args.device)
-
-    criterion = nn.MSELoss(reduction='sum')
-    optimizer = optim.Adam(model.parameters(), lr=args.lr, weight_decay=1e-4)
 
     # Train and save best model
     best_ccc = -1
@@ -477,7 +609,7 @@ def main(args):
             if stats['ccc'] > best_ccc:
                 best_ccc = stats['ccc']
                 path = os.path.join("./lstm_save", 'multiTransformer_best.pth')
-                save_checkpoint(args.modalities, model, path)
+                save_checkpoint(args.modalities, mod_dimension, window_size, model, path)
             if stats['max_ccc'] > single_best_ccc:
                 single_best_ccc = stats['max_ccc']
                 logger.info('===single_max_predict===')
@@ -519,7 +651,9 @@ if __name__ == "__main__":
     parser.add_argument('--normalize', action='store_true', default=False,
                         help='whether to normalize inputs (default: false)')
     parser.add_argument('--test', action='store_true', default=False,
-                        help='evaluate without training (default: false)')
+                        help='evaluate on test set (default: false)')
+    parser.add_argument('--eval', action='store_true', default=False,
+                        help='evaluate on eval set (default: false)')
     parser.add_argument('--load', type=str, default=None,
                         help='path to trained model (either resume or test)')
     parser.add_argument('--data_dir', type=str, default="../data",
