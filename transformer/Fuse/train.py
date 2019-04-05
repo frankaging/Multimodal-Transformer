@@ -18,7 +18,6 @@ import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
 from torch.utils.data import DataLoader
-from torch.optim.lr_scheduler import ReduceLROnPlateau
 
 from datasets import seq_collate_dict, load_dataset
 from models import MultiLSTM, MultiEDLSTM, MultiARLSTM, MultiCNNTransformer
@@ -519,9 +518,9 @@ def main(args):
     args.device = (torch.device(args.device) if torch.cuda.is_available()
                    else torch.device('cpu'))
 
-    args.modalities = ['linguistic', 'emotient']
+    args.modalities = ['linguistic']
     mod_dimension = {'linguistic' : 300, 'emotient' : 20, 'acoustic' : 988, 'image' : 2500}
-    window_size = {'linguistic' : 5, 'emotient' : 5, 'acoustic' : 5, 'image' : 2.5, 'ratings' : 5}
+    window_size = {'linguistic' : 5, 'emotient' : 2.5, 'acoustic' : 5, 'image' : 2.5, 'ratings' : 5}
 
     # loss function define
     criterion = nn.MSELoss(reduction='sum')
@@ -577,7 +576,7 @@ def main(args):
     model = MultiCNNTransformer(mods=args.modalities, dims=mod_dimension, device=args.device)
     # Setting the optimizer
     optimizer = optim.Adam(model.parameters(), lr=args.lr, weight_decay=1e-4)
-    scheduler = ReduceLROnPlateau(optimizer,mode='min',patience=100,factor=0.5,verbose=True)
+
     # Load data for specified modalities
     train_data, test_data = load_data(args.modalities, args.data_dir)
     # training data
@@ -606,8 +605,6 @@ def main(args):
                 pred, loss, stats, (local_best_output, local_best_target, local_best_index) =\
                     evaluate(input_test, ratings_padded_test, seq_lens_test,
                              model, criterion, args)
-                # reduce LR if necessary
-                scheduler.step(loss)
             if stats['ccc'] > best_ccc:
                 best_ccc = stats['ccc']
                 path = os.path.join("./lstm_save", 'multiTransformer_best.pth')
@@ -634,7 +631,7 @@ if __name__ == "__main__":
                         help='sections to split each video into (default: 1)')
     parser.add_argument('--epochs', type=int, default=9999, metavar='N',
                         help='number of epochs to train (default: 1000)')
-    parser.add_argument('--lr', type=float, default=1e-4, metavar='LR',
+    parser.add_argument('--lr', type=float, default=1e-3, metavar='LR',
                         help='learning rate (default: 1e-6)')
     parser.add_argument('--sup_ratio', type=float, default=0.5, metavar='F',
                         help='teacher-forcing ratio (default: 0.5)')

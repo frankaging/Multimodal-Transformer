@@ -125,26 +125,26 @@ class MFN(nn.Module):
         self.dims = dims
         total_embed_size = 0
         total_hidden_size = 0
-        self.hidden_dim = {'linguistic' : 88, 'emotient' : 16, 'acoustic' : 48, 'image' : 16}
+        self.hidden_dim = {'linguistic' : 128, 'emotient' : 128, 'acoustic' : 128, 'image' : 128}
         for mod in mods:
             total_embed_size += dims[mod]
             total_hidden_size += self.hidden_dim[mod]
-        # config params TODO: from orginal paper https://github.com/pliang279/MFN/blob/master/test_mosi.py
-        self.mem_dim = 128
+        # config params
+        self.mem_dim = 256
         window_dim = 2
-        attInShape = total_hidden_size*window_dim
+        attInShape = total_hidden_size*2
         gammaInShape = attInShape+self.mem_dim
         final_out = total_hidden_size+self.mem_dim
-        h_att1 = 128
+        h_att1 = 256
         h_att2 = 256
-        h_gamma1 = 64
-        h_gamma2 = 64
+        h_gamma1 = 128
+        h_gamma2 = 128
         h_out = 64
-        att1_dropout = 0.0
-        att2_dropout = 0.0
-        gamma1_dropout = 0.2
-        gamma2_dropout = 0.2
-        out_dropout = 0.5
+        att1_dropout = 0.3
+        att2_dropout = 0.3
+        gamma1_dropout = 0.3
+        gamma2_dropout = 0.3
+        out_dropout = 0.3
 
         # lstm layers
         self.lstm = dict()
@@ -257,7 +257,7 @@ class MultiTransformer(nn.Module):
         self.mods = mods
         self.window_embed_size = window_embed_size
         # transformer embed layers
-        self.embed_dim = {'linguistic' : 256, 'emotient' : 20, 'acoustic' : 5, 'image' : 256}
+        self.embed_dim = {'linguistic' : 256, 'emotient' : 256, 'acoustic' : 256, 'image' : 256}
 
         self.embed = dict()
         self.transformer = dict()
@@ -269,14 +269,13 @@ class MultiTransformer(nn.Module):
             # for evert modality, we will have embed
             self.embed[mod] = nn.Linear(window_embed_size[mod], self.embed_dim[mod])
             self.add_module('embed_{}'.format(mod), self.embed[mod])
-            if mod == "linguistic":
-                # for evert modality, we will have a transformer
-                self.attn[mod] = MultiHeadedAttention(h, self.embed_dim[mod])
-                self.ff[mod] = PositionwiseFeedForward(self.embed_dim[mod], d_ff, dropout)
-                self.add_module('attn{}'.format(mod), self.attn[mod])
-                self.add_module('ff{}'.format(mod), self.ff[mod])
-                self.transformer[mod] = Encoder(EncoderLayer(self.embed_dim[mod], c(self.attn[mod]), c(self.ff[mod]), dropout), N)
-                self.add_module('transformer_{}'.format(mod), self.transformer[mod])
+            # for evert modality, we will have a transformer
+            self.attn[mod] = MultiHeadedAttention(h, self.embed_dim[mod])
+            self.ff[mod] = PositionwiseFeedForward(self.embed_dim[mod], d_ff, dropout)
+            self.add_module('attn{}'.format(mod), self.attn[mod])
+            self.add_module('ff{}'.format(mod), self.ff[mod])
+            self.transformer[mod] = Encoder(EncoderLayer(self.embed_dim[mod], c(self.attn[mod]), c(self.ff[mod]), dropout), N)
+            self.add_module('transformer_{}'.format(mod), self.transformer[mod])
 
         # Memory fusion network to decode the outputs <- output dim = 1 TODO: check here!
         self.mfn = MFN(mods, self.embed_dim, 1)
@@ -292,16 +291,13 @@ class MultiTransformer(nn.Module):
         # Convert raw features into equal-dimensional embeddings
         mfn_in = dict()
         for mod in self.mods:
-            # TODO: only linguistic cues will go through transformer
-            #       otherwise just a linear layer
             embed = self.embed[mod](inputs[mod])
             # print("=== mod:" + mod + " ===")
             # print(inputs[mod])
-            if mod == "linguistic":
-                embed = self.transformer[mod](embed, mask) # batch_size, seq_len, self.embed_dim
-            mfn_in[mod] = embed.permute(1,0,2) # seq_len, batch_size, self.embed_dim
-            # print("=== mod:" + mod + " ===")
-            # print(mfn_in[mod])
+            transformer_out = self.transformer[mod](embed, mask) # batch_size, seq_len, self.embed_dim
+            mfn_in[mod] = transformer_out.permute(1,0,2) # seq_len, batch_size, self.embed_dim
+            print("=== mod:" + mod + " ===")
+            print(mfn_in[mod])
         predicted = self.mfn(mfn_in)
         # predicted = predicted.permute(1,0)
         # print("==mfn out size==")
@@ -323,7 +319,9 @@ class UniTransformer(nn.Module):
         self.h_dim = h_dim
         # embedding layers
         # Create raw-to-embed FC+Dropout layer
-        self.embed = nn.Linear(window_embed_size, embed_dim)
+        self.embed = nn.Sequential(nn.Dropout(0.1),
+                                   nn.Linear(window_embed_size, embed_dim),
+                                   nn.ReLU())
         # modality -> only linguistics -> output embed_dim
 
         # encoder (6 encoders)
@@ -351,7 +349,6 @@ class UniTransformer(nn.Module):
         # Get batch dim
         batch_size, seq_len = len(lengths), max(lengths)
         # Convert raw features into equal-dimensional embeddings
-
         embed = self.embed(inputs)
         encoder_output = self.encoder(embed, mask) # batch_size, seq_len, self.embed_dim
         # LSTM output from the encoder

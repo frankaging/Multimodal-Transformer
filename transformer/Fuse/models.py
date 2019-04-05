@@ -109,7 +109,7 @@ class Highway(nn.Module):
 		# 2. apply sigma
 		# 3. apply highway function
 		# *. consider this is in a batch operation. get the input length for example
-		x_proj = self.linear_projection(x_conv_out)
+		x_proj = nn.functional.relu(self.linear_projection(x_conv_out))
 		x_gate = nn.functional.sigmoid(self.linear_gate(x_conv_out))
 		x_highway = (x_gate * x_proj) + ((1 - x_gate) * x_conv_out)
 		return x_highway
@@ -145,7 +145,7 @@ class MultiCNNTransformer(nn.Module):
         self.dims = dims
         self.CNN = dict()
         self.Highway = dict()
-        self.window_embed_size={'linguistic' : 300, 'emotient' : 20, 'acoustic' : 10, 'image' : 256}
+        self.window_embed_size={'linguistic' : 256, 'emotient' : 256, 'acoustic' : 256, 'image' : 256}
         total_embed_size = 0
         for mod in mods:
             if mod != 'image':
