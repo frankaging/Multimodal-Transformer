@@ -376,3 +376,47 @@ class UniTransformer(nn.Module):
         # Mask target entries that exceed sequence lengths
         predicted = predicted * mask.float()
         return predicted
+
+class UniFullTransformer(nn.Module):
+    def __init__(self, window_embed_size, embed_dim=256, h_dim=128,
+                 N=6, d_ff=128, h=8, dropout=0.1, n_layers=1,
+                 device=torch.device('cuda:0')):
+        super(UniFullTransformer, self).__init__()
+        self.embed_dim = embed_dim
+        self.h_dim = h_dim
+        # embedding layers
+        # Create raw-to-embed FC+Dropout layer
+        self.embed = nn.Linear(window_embed_size, embed_dim)
+        # modality -> only linguistics -> output embed_dim
+
+        # encoder (6 encoders)
+        # encoder = encoder layer + sublayer connection
+        # encoder layer = attention layer + feedforward + norm layer
+        c = copy.deepcopy
+        attn = MultiHeadedAttention(h, embed_dim)
+        ff = PositionwiseFeedForward(embed_dim, d_ff, dropout)
+        self.encoder = Encoder(EncoderLayer(embed_dim, c(attn), c(ff), dropout), N)
+
+        # the output will be in the embed_dim dimension
+        # output only 1d
+        self.out = nn.Sequential(nn.Linear(embed_dim, h_dim),
+                                 nn.ReLU(),
+                                 nn.Linear(h_dim, 1))
+        # Store module in specified device (CUDA/CPU)
+        self.device = (device if torch.cuda.is_available() else
+                       torch.device('cpu'))
+        self.to(self.device)
+
+    def forward(self, inputs, mask, lengths, tgt_init=0.5, target=None):
+        # Get batch dim
+        batch_size, seq_len = len(lengths), max(lengths)
+        # Convert raw features into equal-dimensional embeddings
+
+        embed = self.embed(inputs)
+        encoder_output = self.encoder(embed, mask) # batch_size, seq_len, self.embed_dim
+        # print(encoder_output.size())
+        predicted = self.out(encoder_output) # <- embed to 1
+        print(predicted)
+        # Mask target entries that exceed sequence lengths
+        predicted = predicted * mask.float()
+        return predicted

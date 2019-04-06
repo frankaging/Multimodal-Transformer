@@ -5,7 +5,7 @@ from __future__ import absolute_import
 import torch
 import torch.nn as nn
 from torch.nn.utils.rnn import pack_padded_sequence, pad_packed_sequence
-from multiTransformer import UniTransformer, MultiTransformer
+from multiTransformer import UniTransformer, MultiTransformer, UniFullTransformer
 
 def pad_shift(x, shift, padv=0.0):
     """Shift 3D tensor forwards in time with padding."""
@@ -162,7 +162,7 @@ class MultiCNNTransformer(nn.Module):
         else:
             # make sure it is only 1 mod
             assert len(mods) == 1
-            self.Transformer = UniTransformer(total_embed_size)
+            self.Transformer = UniFullTransformer(total_embed_size)
         self.dropout = nn.Dropout(p=0.3)
         # Store module in specified device (CUDA/CPU)
         self.device = (device if torch.cuda.is_available() else
