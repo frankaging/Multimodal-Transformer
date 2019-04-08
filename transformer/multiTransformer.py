@@ -416,7 +416,7 @@ class UniFullTransformer(nn.Module):
         encoder_output = self.encoder(embed, mask) # batch_size, seq_len, self.embed_dim
         # print(encoder_output.size())
         predicted = self.out(encoder_output) # <- embed to 1
-        print(predicted)
+        # print(predicted)
         # Mask target entries that exceed sequence lengths
         predicted = predicted * mask.float()
         return predicted
