@@ -517,7 +517,7 @@ def main(args):
 
     args.modalities = ['image']
     mod_dimension = {'linguistic' : 300, 'emotient' : 20, 'acoustic' : 988, 'image' : 1000}
-    window_size = {'linguistic' : 5, 'emotient' : 5, 'acoustic' : 5, 'image' : 5, 'ratings' : 5}
+    window_size = {'linguistic' : 5, 'emotient' : 5, 'acoustic' : 5, 'image' : 0.5, 'ratings' : 0.5}
 
     # loss function define
     criterion = nn.MSELoss(reduction='sum')
