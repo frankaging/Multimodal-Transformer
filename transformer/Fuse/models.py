@@ -87,7 +87,7 @@ class MultiCNNTransformer(nn.Module):
         self.dims = dims
         self.CNN = dict()
         self.Highway = dict()
-        self.window_embed_size={'linguistic' : 300, 'emotient' : 20, 'acoustic' : 10, 'image' : 1000}
+        self.window_embed_size={'linguistic' : 256, 'emotient' : 16, 'acoustic' : 256, 'image' : 256}
         total_embed_size = 0
         for mod in mods:
             self.CNN[mod] = CNN(dims[mod], self.window_embed_size[mod], k)

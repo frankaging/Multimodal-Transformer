@@ -519,9 +519,9 @@ def main(args):
     args.device = (torch.device(args.device) if torch.cuda.is_available()
                    else torch.device('cpu'))
 
-    args.modalities = ['linguistic',  'emotient']
+    args.modalities = ['linguistic']
     mod_dimension = {'linguistic' : 300, 'emotient' : 20, 'acoustic' : 988, 'image' : 2500}
-    window_size = {'linguistic' : 5, 'emotient' : 1, 'acoustic' : 5, 'image' : 2.5, 'ratings' : 1}
+    window_size = {'linguistic' : 5, 'emotient' : 1, 'acoustic' : 1, 'image' : 1, 'ratings' : 1}
 
     # loss function define
     criterion = nn.MSELoss(reduction='sum')

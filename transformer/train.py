@@ -18,10 +18,10 @@ import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
 from torch.utils.data import DataLoader
-from torch.optim.lr_scheduler import ReduceLROnPlateau
 
 from datasets import seq_collate_dict, load_dataset
-from models import MultiLSTM, MultiEDLSTM, MultiARLSTM, MultiCNNTransformer
+from models import MultiLSTM, MultiEDLSTM, MultiARLSTM, MultiCNNLSTM
+from multiTransformer import NLPTransformer
 
 from random import shuffle
 from operator import itemgetter
@@ -345,7 +345,6 @@ def load_data(modalities, data_dir, eval_dir=None):
         train_data = load_dataset(modalities, data_dir, 'Train',
                                 base_rate=args.base_rate,
                                 truncate=True, item_as_dict=True)
-        # train_data = None
         test_data = load_dataset(modalities, data_dir, 'Valid',
                                 base_rate=args.base_rate,
                                 truncate=True, item_as_dict=True)
@@ -392,6 +391,11 @@ def videoInputHelper(input_data, window_size, channel):
                 video_vs.append(window_vs)
             window_vs = []
             current_time += window_size
+    # TODO: we are only taking average from each window for image
+    if channel == 'image':
+        data = np.asarray(video_vs)
+        data = np.average(data, axis=1)
+        video_vs = np.expand_dims(data, axis=1).tolist()
     return video_vs
 
 def ratingInputHelper(input_data, window_size):
@@ -515,9 +519,9 @@ def main(args):
     args.device = (torch.device(args.device) if torch.cuda.is_available()
                    else torch.device('cpu'))
 
-    args.modalities = ['image']
-    mod_dimension = {'linguistic' : 300, 'emotient' : 20, 'acoustic' : 988, 'image' : 1000}
-    window_size = {'linguistic' : 5, 'emotient' : 5, 'acoustic' : 5, 'image' : 0.5, 'ratings' : 0.5}
+    args.modalities = ['linguistic']
+    mod_dimension = {'linguistic' : 300, 'emotient' : 20, 'acoustic' : 988, 'image' : 2500}
+    window_size = {'linguistic' : 5, 'emotient' : 1, 'acoustic' : 1, 'image' : 1, 'ratings' : 1}
 
     # loss function define
     criterion = nn.MSELoss(reduction='sum')
@@ -541,7 +545,7 @@ def main(args):
         mod_dimension = checkpoint['mod_dimension']
         window_size = checkpoint['window_size']
         # construct model
-        model = MultiCNNTransformer(mods=args.modalities, dims=mod_dimension, device=args.device)
+        model = MultiCNNLSTM(mods=args.modalities, dims=mod_dimension, device=args.device)
         model.load_state_dict(checkpoint['model'])
         ccc, pred, actuals = \
             evaluateOnEval(input_padded_eval, ratings_padded_eval, seq_lens_eval,
@@ -570,10 +574,10 @@ def main(args):
         return
 
     # construct model
-    model = MultiCNNTransformer(mods=args.modalities, dims=mod_dimension, device=args.device)
+    model = MultiCNNLSTM(mods=args.modalities, dims=mod_dimension, device=args.device)
     # Setting the optimizer
     optimizer = optim.Adam(model.parameters(), lr=args.lr, weight_decay=1e-4)
-    scheduler = ReduceLROnPlateau(optimizer,mode='min',patience=100,factor=0.5,verbose=True)
+
     # Load data for specified modalities
     train_data, test_data = load_data(args.modalities, args.data_dir)
     # training data
@@ -602,8 +606,6 @@ def main(args):
                 pred, loss, stats, (local_best_output, local_best_target, local_best_index) =\
                     evaluate(input_test, ratings_padded_test, seq_lens_test,
                              model, criterion, args)
-                # reduce LR if necessary
-                scheduler.step(loss)
             if stats['ccc'] > best_ccc:
                 best_ccc = stats['ccc']
                 path = os.path.join("./lstm_save", 'multiTransformer_best.pth')
@@ -630,7 +632,7 @@ if __name__ == "__main__":
                         help='sections to split each video into (default: 1)')
     parser.add_argument('--epochs', type=int, default=9999, metavar='N',
                         help='number of epochs to train (default: 1000)')
-    parser.add_argument('--lr', type=float, default=1e-4, metavar='LR',
+    parser.add_argument('--lr', type=float, default=1e-3, metavar='LR',
                         help='learning rate (default: 1e-6)')
     parser.add_argument('--sup_ratio', type=float, default=0.5, metavar='F',
                         help='teacher-forcing ratio (default: 0.5)')

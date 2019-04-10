@@ -257,7 +257,7 @@ class MultiTransformer(nn.Module):
         self.mods = mods
         self.window_embed_size = window_embed_size
         # transformer embed layers
-        self.embed_dim = {'linguistic' : 256, 'emotient' : 20, 'acoustic' : 5, 'image' : 256}
+        self.embed_dim = {'linguistic' : 256, 'emotient' : 16, 'acoustic' : 256, 'image' : 256}
 
         self.embed = dict()
         self.transformer = dict()
@@ -269,14 +269,13 @@ class MultiTransformer(nn.Module):
             # for evert modality, we will have embed
             self.embed[mod] = nn.Linear(window_embed_size[mod], self.embed_dim[mod])
             self.add_module('embed_{}'.format(mod), self.embed[mod])
-            if mod == "linguistic":
-                # for evert modality, we will have a transformer
-                self.attn[mod] = MultiHeadedAttention(h, self.embed_dim[mod])
-                self.ff[mod] = PositionwiseFeedForward(self.embed_dim[mod], d_ff, dropout)
-                self.add_module('attn{}'.format(mod), self.attn[mod])
-                self.add_module('ff{}'.format(mod), self.ff[mod])
-                self.transformer[mod] = Encoder(EncoderLayer(self.embed_dim[mod], c(self.attn[mod]), c(self.ff[mod]), dropout), N)
-                self.add_module('transformer_{}'.format(mod), self.transformer[mod])
+            # for evert modality, we will have a transformer
+            self.attn[mod] = MultiHeadedAttention(h, self.embed_dim[mod])
+            self.ff[mod] = PositionwiseFeedForward(self.embed_dim[mod], d_ff, dropout)
+            self.add_module('attn{}'.format(mod), self.attn[mod])
+            self.add_module('ff{}'.format(mod), self.ff[mod])
+            self.transformer[mod] = Encoder(EncoderLayer(self.embed_dim[mod], c(self.attn[mod]), c(self.ff[mod]), dropout), N)
+            self.add_module('transformer_{}'.format(mod), self.transformer[mod])
 
         # Memory fusion network to decode the outputs <- output dim = 1 TODO: check here!
         self.mfn = MFN(mods, self.embed_dim, 1)
@@ -297,8 +296,7 @@ class MultiTransformer(nn.Module):
             embed = self.embed[mod](inputs[mod])
             # print("=== mod:" + mod + " ===")
             # print(inputs[mod])
-            if mod == "linguistic":
-                embed = self.transformer[mod](embed, mask) # batch_size, seq_len, self.embed_dim
+            embed = self.transformer[mod](embed, mask) # batch_size, seq_len, self.embed_dim
             mfn_in[mod] = embed.permute(1,0,2) # seq_len, batch_size, self.embed_dim
             # print("=== mod:" + mod + " ===")
             # print(mfn_in[mod])
