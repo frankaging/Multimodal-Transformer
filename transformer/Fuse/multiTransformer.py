@@ -257,7 +257,7 @@ class MultiTransformer(nn.Module):
         self.mods = mods
         self.window_embed_size = window_embed_size
         # transformer embed layers
-        self.embed_dim = {'linguistic' : 256, 'emotient' : 16, 'acoustic' : 256, 'image' : 256}
+        self.embed_dim = {'linguistic' : 256, 'emotient' : 16, 'acoustic' : 256, 'image' : 512}
 
         self.embed = dict()
         self.transformer = dict()

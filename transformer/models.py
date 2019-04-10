@@ -145,7 +145,7 @@ class MultiCNNLSTM(nn.Module):
         self.dims = dims
         self.CNN = dict()
         self.Highway = dict()
-        self.window_embed_size={'linguistic' : 256, 'emotient' : 16, 'acoustic' : 256, 'image' : 256}
+        self.window_embed_size={'linguistic' : 300, 'emotient' : 20, 'acoustic' : 256, 'image' : 512}
         total_embed_size = 0
         for mod in mods:
             if mod != 'image':
