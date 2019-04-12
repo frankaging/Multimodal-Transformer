@@ -14,6 +14,7 @@ class MultiseqDataset(Dataset):
     def __init__(self, modalities, dirs, regex, preprocess,
                  base_rate=None, truncate=False, item_as_dict=False):
         """Loads valence ratings and features for each modality.
+
         modalities -- names of each input modality
         dirs -- list of directories containing input features
         regex -- regex patterns for the filenames of each modality

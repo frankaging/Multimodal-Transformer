@@ -42,3 +42,4 @@ data_hidden/
 transformer/__pycache__/
 .dropbox
 transformer/log_save/
+transformer/model_save/

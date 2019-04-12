@@ -125,7 +125,7 @@ class MFN(nn.Module):
         self.dims = dims
         total_embed_size = 0
         total_hidden_size = 0
-        self.hidden_dim = {'linguistic' : 88, 'emotient' : 16, 'acoustic' : 48, 'image' : 16}
+        self.hidden_dim = {'linguistic' : 88, 'emotient' : 16, 'acoustic' : 48, 'image' : 88}
         for mod in mods:
             total_embed_size += dims[mod]
             total_hidden_size += self.hidden_dim[mod]
@@ -257,7 +257,7 @@ class MultiTransformer(nn.Module):
         self.mods = mods
         self.window_embed_size = window_embed_size
         # transformer embed layers
-        self.embed_dim = {'linguistic' : 256, 'emotient' : 16, 'acoustic' : 256, 'image' : 512}
+        self.embed_dim = {'linguistic' : 256, 'emotient' : 16, 'acoustic' : 256, 'image' : 256}
 
         self.embed = dict()
         self.transformer = dict()

@@ -18,10 +18,10 @@ import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
 from torch.utils.data import DataLoader
-from torch.optim.lr_scheduler import ReduceLROnPlateau
 
 from datasets import seq_collate_dict, load_dataset
-from models import MultiLSTM, MultiEDLSTM, MultiARLSTM, MultiCNNTransformer
+from models import MultiLSTM, MultiEDLSTM, MultiARLSTM, MultiCNNLSTM
+from multiTransformer import NLPTransformer
 
 from random import shuffle
 from operator import itemgetter
@@ -345,7 +345,6 @@ def load_data(modalities, data_dir, eval_dir=None):
         train_data = load_dataset(modalities, data_dir, 'Train',
                                 base_rate=args.base_rate,
                                 truncate=True, item_as_dict=True)
-        # train_data = None
         test_data = load_dataset(modalities, data_dir, 'Valid',
                                 base_rate=args.base_rate,
                                 truncate=True, item_as_dict=True)
@@ -392,6 +391,11 @@ def videoInputHelper(input_data, window_size, channel):
                 video_vs.append(window_vs)
             window_vs = []
             current_time += window_size
+    # TODO: we are only taking average from each window for image
+    #if channel == 'image':
+    #   data = np.asarray(video_vs)
+    #   data = np.average(data, axis=1)
+    #   video_vs = np.expand_dims(data, axis=1).tolist()
     return video_vs
 
 def ratingInputHelper(input_data, window_size):
@@ -515,7 +519,7 @@ def main(args):
     args.device = (torch.device(args.device) if torch.cuda.is_available()
                    else torch.device('cpu'))
 
-    args.modalities = ['linguistic', 'acoustic']
+    args.modalities = ['image', 'acoustic']
     mod_dimension = {'linguistic' : 300, 'emotient' : 20, 'acoustic' : 988, 'image' : 1000}
     window_size = {'linguistic' : 5, 'emotient' : 1, 'acoustic' : 1, 'image' : 1, 'ratings' : 1}
 
@@ -534,18 +538,21 @@ def main(args):
         input_features_eval, ratings_eval = constructInput(eval_data, channels=args.modalities, window_size=window_size)
         input_padded_eval, seq_lens_eval = padInput(input_features_eval, args.modalities, mod_dimension)
         ratings_padded_eval = padRating(ratings_eval, max(seq_lens_eval))
-        model_path = os.path.join("../lstm_save", "multiTransformer_best.pth")
+        model_path = os.path.join("./lstm_save", "CNN_LSTM_AT.pth")
         checkpoint = load_checkpoint(model_path, args.device)
         # load the testing parameters
         args.modalities = checkpoint['modalities']
         mod_dimension = checkpoint['mod_dimension']
         window_size = checkpoint['window_size']
         # construct model
-        model = MultiCNNTransformer(mods=args.modalities, dims=mod_dimension, device=args.device)
+        model = MultiCNNLSTM(mods=args.modalities, dims=mod_dimension, device=args.device)
         model.load_state_dict(checkpoint['model'])
         ccc, pred, actuals = \
             evaluateOnEval(input_padded_eval, ratings_padded_eval, seq_lens_eval,
                            model, criterion, args)
+        stats = {'ccc': np.mean(ccc), 'ccc_std': np.std(ccc)}
+        logger.info('Evaluation\tCCC(std): {:2.5f}({:2.5f})'.\
+            format(stats['ccc'], stats['ccc_std']))
         # zip and get the top ccc
         pred_ccc = list(zip(pred, ccc))
         pred_ccc.sort(key=itemgetter(1),reverse=True)
@@ -566,14 +573,14 @@ def main(args):
             actual_sort.append(pair[0])
 
         # plot the top count prediction vs true
-        plot_eval(pred_sort, ccc_sort, actual_sort, window_size['ratings'])
+        # plot_eval(pred_sort, ccc_sort, actual_sort, window_size['ratings'])
         return
 
     # construct model
-    model = MultiCNNTransformer(mods=args.modalities, dims=mod_dimension, device=args.device)
+    model = MultiCNNLSTM(mods=args.modalities, dims=mod_dimension, device=args.device)
     # Setting the optimizer
     optimizer = optim.Adam(model.parameters(), lr=args.lr, weight_decay=1e-4)
-    scheduler = ReduceLROnPlateau(optimizer,mode='min',patience=100,factor=0.5,verbose=True)
+
     # Load data for specified modalities
     train_data, test_data = load_data(args.modalities, args.data_dir)
     # training data
@@ -602,11 +609,9 @@ def main(args):
                 pred, loss, stats, (local_best_output, local_best_target, local_best_index) =\
                     evaluate(input_test, ratings_padded_test, seq_lens_test,
                              model, criterion, args)
-                # reduce LR if necessary
-                scheduler.step(loss)
             if stats['ccc'] > best_ccc:
                 best_ccc = stats['ccc']
-                path = os.path.join("./lstm_save", 'TWEF_AL.pth')
+                path = os.path.join("./lstm_save", 'CNN_LSTM_AV.pth')
                 save_checkpoint(args.modalities, mod_dimension, window_size, model, path)
             if stats['max_ccc'] > single_best_ccc:
                 single_best_ccc = stats['max_ccc']
@@ -628,7 +633,7 @@ if __name__ == "__main__":
                         help='input batch size for training (default: 10)')
     parser.add_argument('--split', type=int, default=1, metavar='N',
                         help='sections to split each video into (default: 1)')
-    parser.add_argument('--epochs', type=int, default=9999, metavar='N',
+    parser.add_argument('--epochs', type=int, default=700, metavar='N',
                         help='number of epochs to train (default: 1000)')
     parser.add_argument('--lr', type=float, default=1e-4, metavar='LR',
                         help='learning rate (default: 1e-6)')

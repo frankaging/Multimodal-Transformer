@@ -24,66 +24,6 @@ def convolve(x, attn):
                            i in range(attn.shape[2])], dim=-1)
     return torch.sum(attn.unsqueeze(2) * stacked, dim=-1)
 
-class VGG16(nn.Module):
-    ''' input = (1, 1, 224, 224) '''
-    def __init__(self, window_embed_size=128, num_classes=256,
-                 dropout=0.1, device=torch.device('cuda:0')):
-        super(VGG16, self).__init__()
-        self.num_classes = num_classes
-        self.convs = nn.Sequential(
-                        nn.Conv2d(1, 64, kernel_size=3, padding=1),
-                        nn.ReLU(inplace=True),
-                        nn.Conv2d(64, 64, kernel_size=3, padding=1),
-                        nn.ReLU(inplace=True),
-                        nn.MaxPool2d(kernel_size=2, stride=2),
-                        nn.Conv2d(64, 128, kernel_size=3, padding=1),
-                        nn.ReLU(inplace=True),
-                        nn.Conv2d(128, 128, kernel_size=3, padding=1),
-                        nn.ReLU(inplace=True),
-                        nn.MaxPool2d(kernel_size=2, stride=2),
-                        nn.Conv2d(128, 256, kernel_size=3, padding=1),
-                        nn.ReLU(inplace=True),
-                        nn.Conv2d(256, 256, kernel_size=3, padding=1),
-                        nn.ReLU(inplace=True),
-                        nn.Conv2d(256, 256, kernel_size=3, padding=1),
-                        nn.ReLU(inplace=True),
-                        nn.MaxPool2d(kernel_size=2, stride=2),
-                        nn.Conv2d(256, 512, kernel_size=3, padding=1),
-                        nn.ReLU(inplace=True),
-                        nn.Conv2d(512, 512, kernel_size=3, padding=1),
-                        nn.ReLU(inplace=True),
-                        nn.Conv2d(512, 512, kernel_size=3, padding=1),
-                        nn.ReLU(inplace=True),
-                        nn.MaxPool2d(kernel_size=2, stride=2),
-                        nn.Conv2d(512, 512, kernel_size=3, padding=1),
-                        nn.ReLU(inplace=True),
-                        nn.Conv2d(512, 512, kernel_size=3, padding=1),
-                        nn.ReLU(inplace=True),
-                        nn.Conv2d(512, 512, kernel_size=3, padding=1),
-                        nn.ReLU(inplace=True),
-                        nn.MaxPool2d(kernel_size=2, stride=2),
-        )
-        self.classifier = nn.Sequential(
-                            nn.Linear(512, 4096),
-                            nn.ReLU(inplace=True),
-                            nn.Dropout(),
-                            nn.Linear(4096, 4096),
-                            nn.ReLU(inplace=True),
-                            nn.Dropout(),
-                            nn.Linear(4096, num_classes),
-        )
-
-        # Store module in specified device (CUDA/CPU)
-        self.device = (device if torch.cuda.is_available() else
-                       torch.device('cpu'))
-        self.to(self.device)
-
-    def forward(self, inputs):
-        x = self.convs(inputs)
-        x = x.view(x.size(0), -1)
-        x = self.classifier(x)
-        return x
-
 class Highway(nn.Module):
 	def __init__(self, word_embed_size):
 		"""
@@ -115,7 +55,7 @@ class Highway(nn.Module):
 		return x_highway
 
 class CNN(nn.Module):
-    def __init__(self, word_embed_size=300, window_embed_size=128, k=3):
+    def __init__(self, word_embed_size=300, window_embed_size=128, k=2):
         super(CNN, self).__init__()
         # TODO:
         # 1. con1d layer, with input and output size
@@ -136,26 +76,23 @@ class CNN(nn.Module):
         x_conv_out = torch.squeeze(maxpool(x_conv), 2) # (batch_size, window_embed_size)
         return x_conv_out
 
-class MultiCNNLSTM(nn.Module):
-    def __init__(self, mods, dims, fuse_embed_size=256, k=3,
+class MultiCNNTransformer(nn.Module):
+    def __init__(self, mods, dims, fuse_embed_size=256, k=2,
                  device=torch.device('cuda:0')):
-        super(MultiCNNLSTM, self).__init__()
+        super(MultiCNNTransformer, self).__init__()
         # init
         self.mods = mods
         self.dims = dims
         self.CNN = dict()
         self.Highway = dict()
-        self.window_embed_size={'linguistic' : 300, 'emotient' : 20, 'acoustic' : 256, 'image' : 512}
+        self.window_embed_size={'linguistic' : 256, 'emotient' : 16, 'acoustic' : 256, 'image' : 256}
         total_embed_size = 0
         for mod in mods:
-            if mod != 'image':
-                self.CNN[mod] = CNN(dims[mod], self.window_embed_size[mod], k)
-                self.Highway[mod] = Highway(self.window_embed_size[mod])
-                self.add_module('cnn_{}'.format(mod), self.CNN[mod])
-                self.add_module('highway_{}'.format(mod), self.Highway[mod])
+            self.CNN[mod] = CNN(dims[mod], self.window_embed_size[mod], k)
+            self.Highway[mod] = Highway(self.window_embed_size[mod])
+            self.add_module('cnn_{}'.format(mod), self.CNN[mod])
+            self.add_module('highway_{}'.format(mod), self.Highway[mod])
             total_embed_size += self.window_embed_size[mod]
-        self.VGG = VGG16()
-        self.VGG_CNN = CNN(word_embed_size = 10, window_embed_size=self.window_embed_size['image'])     # TODO: variable input length?
         self.fusionLayer = nn.Linear(total_embed_size, fuse_embed_size)
         if len(mods) > 1:
             self.LSTM = NLPTransformer(fuse_embed_size)
@@ -175,29 +112,16 @@ class MultiCNNLSTM(nn.Module):
         for mod in self.mods:
             inputs_mod = inputs[mod]
             outputs_mod = []
-            if mod == 'image':
-                for x in torch.split(inputs_mod, 1, 0):  # input -> (batch_size, ~199, 2, 2500)
-                    # print(x.size())
-                    x = torch.squeeze(x, 0) # input -> (~199, 2, 2500)
-                    # print(x.size())
-                    x = x.reshape(-1, 1, 50, 50)
-                    vggout = self.VGG(x) # -> (~398, 256)
-                    # print(vggout.size())
-                    # vggout = vggout.reshape(-1, 10, self.window_embed_size['image']) # -> (~199, 2, 256)
-                    # vggout = self.VGG_CNN(vggout)   # -> (~199, 256)
-                    outputs_mod.append(vggout)
-                outputs_mod = torch.stack(outputs_mod, dim=0) # -> (batch_size, ~199, 256)
-            else:
-                for x in torch.split(inputs_mod, 1, 0):
-                    # print('current memory allocated: {}'.format(torch.cuda.memory_allocated() / 1024 ** 2))
-                    # print('max memory allocated: {}'.format(torch.cuda.max_memory_allocated() / 1024 ** 2))
-                    # print('cached memory: {}'.format(torch.cuda.memory_cached() / 1024 ** 2))
-                    x = torch.squeeze(x, 0) # input -> (39, 33, 300)
-                    cnnOut = self.CNN[mod](x.permute(0, 2, 1)) # -> (39, 128)
-                    x_highway = self.Highway[mod](cnnOut)
-                    x_word_emb = self.dropout(x_highway)
-                    outputs_mod.append(x_word_emb)
-                outputs_mod = torch.stack(outputs_mod, dim=0)
+            for x in torch.split(inputs_mod, 1, 0):
+                # print('current memory allocated: {}'.format(torch.cuda.memory_allocated() / 1024 ** 2))
+                # print('max memory allocated: {}'.format(torch.cuda.max_memory_allocated() / 1024 ** 2))
+                # print('cached memory: {}'.format(torch.cuda.memory_cached() / 1024 ** 2))
+                x = torch.squeeze(x, 0) # input -> (39, 33, 300)
+                cnnOut = self.CNN[mod](x.permute(0, 2, 1)) # -> (39, 128)
+                x_highway = self.Highway[mod](cnnOut)
+                x_word_emb = self.dropout(x_highway)
+                outputs_mod.append(x_word_emb)
+            outputs_mod = torch.stack(outputs_mod, dim=0)
 
             outputs.append(outputs_mod)
         if len(outputs) > 1:
