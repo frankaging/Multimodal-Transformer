@@ -5,7 +5,7 @@ from __future__ import absolute_import
 import torch
 import torch.nn as nn
 from torch.nn.utils.rnn import pack_padded_sequence, pad_packed_sequence
-from multiTransformer import NLPTransformer
+from multiTransformer import UniTransformer, MultiTransformer, UniFullTransformer
 
 def pad_shift(x, shift, padv=0.0):
     """Shift 3D tensor forwards in time with padding."""
@@ -49,7 +49,7 @@ class Highway(nn.Module):
 		# 2. apply sigma
 		# 3. apply highway function
 		# *. consider this is in a batch operation. get the input length for example
-		x_proj = nn.functional.relu(self.linear_projection(x_conv_out))
+		x_proj = self.linear_projection(x_conv_out)
 		x_gate = nn.functional.sigmoid(self.linear_gate(x_conv_out))
 		x_highway = (x_gate * x_proj) + ((1 - x_gate) * x_conv_out)
 		return x_highway
@@ -69,7 +69,9 @@ class CNN(nn.Module):
         # TODO:
         # input: input is a tensor in shape (batch_size, word_embed_size, max_window_length)
         # output: output is a tensor in shape (batch_size, window_embed_size)
+        # print(x_reshape.shape)
         x_conv = self.conv1d(x_reshape) # (batch_size, window_embed_size, m_word+k+1)
+        # print(x_conv.shape)
         # x_conv_relu = nn.functional.relu(x_conv)
         L = x_conv.size()[2]
         maxpool = nn.MaxPool1d(L, stride=3)
@@ -77,7 +79,7 @@ class CNN(nn.Module):
         return x_conv_out
 
 class MultiCNNTransformer(nn.Module):
-    def __init__(self, mods, dims, fuse_embed_size=256, k=2,
+    def __init__(self, mods, dims, fuse_embed_size=512, k=2,
                  device=torch.device('cuda:0')):
         super(MultiCNNTransformer, self).__init__()
         # init
@@ -85,7 +87,7 @@ class MultiCNNTransformer(nn.Module):
         self.dims = dims
         self.CNN = dict()
         self.Highway = dict()
-        self.window_embed_size={'linguistic' : 256, 'emotient' : 16, 'acoustic' : 256, 'image' : 256}
+        self.window_embed_size={'linguistic' : 300, 'emotient' : 20, 'acoustic' : 256, 'image' : 256}
         total_embed_size = 0
         for mod in mods:
             self.CNN[mod] = CNN(dims[mod], self.window_embed_size[mod], k)
@@ -93,11 +95,8 @@ class MultiCNNTransformer(nn.Module):
             self.add_module('cnn_{}'.format(mod), self.CNN[mod])
             self.add_module('highway_{}'.format(mod), self.Highway[mod])
             total_embed_size += self.window_embed_size[mod]
-        self.fusionLayer = nn.Linear(total_embed_size, fuse_embed_size)
-        if len(mods) > 1:
-            self.LSTM = NLPTransformer(fuse_embed_size)
-        else:
-            self.LSTM = NLPTransformer(total_embed_size)
+        # self.fusionLayer = nn.Linear(total_embed_size, fuse_embed_size)
+        self.Transformer = UniFullTransformer(total_embed_size)
         self.dropout = nn.Dropout(p=0.3)
         # Store module in specified device (CUDA/CPU)
         self.device = (device if torch.cuda.is_available() else
@@ -108,28 +107,31 @@ class MultiCNNTransformer(nn.Module):
         '''
         inputs = (batch_size, 39, 33, 300)
         '''
-        outputs = []
+        # CNN embedding
+        outputs = {}
         for mod in self.mods:
             inputs_mod = inputs[mod]
             outputs_mod = []
+            # print(inputs_mod.shape)
             for x in torch.split(inputs_mod, 1, 0):
                 # print('current memory allocated: {}'.format(torch.cuda.memory_allocated() / 1024 ** 2))
                 # print('max memory allocated: {}'.format(torch.cuda.max_memory_allocated() / 1024 ** 2))
                 # print('cached memory: {}'.format(torch.cuda.memory_cached() / 1024 ** 2))
                 x = torch.squeeze(x, 0) # input -> (39, 33, 300)
+                # print(x.permute(0, 2, 1).shape)
                 cnnOut = self.CNN[mod](x.permute(0, 2, 1)) # -> (39, 128)
                 x_highway = self.Highway[mod](cnnOut)
                 x_word_emb = self.dropout(x_highway)
                 outputs_mod.append(x_word_emb)
             outputs_mod = torch.stack(outputs_mod, dim=0)
-
-            outputs.append(outputs_mod)
+            outputs[mod] = outputs_mod
+        # Transformer with output headers
         if len(outputs) > 1:
             outputs = torch.cat(outputs, 2)
-            fused_outputs = torch.tanh(self.fusionLayer(outputs))
+            # fused_outputs = torch.tanh(self.fusionLayer(outputs))
+            predict = self.Transformer(outputs, mask, length)
         else:
-            fused_outputs = outputs[0]
-        predict = self.LSTM(fused_outputs, mask, length)
+            predict = self.Transformer(outputs[self.mods[0]], mask, length)
         return predict
 
 class MultiLSTM(nn.Module):

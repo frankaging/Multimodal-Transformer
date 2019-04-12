@@ -269,13 +269,6 @@ class MultiTransformer(nn.Module):
             # for evert modality, we will have embed
             self.embed[mod] = nn.Linear(window_embed_size[mod], self.embed_dim[mod])
             self.add_module('embed_{}'.format(mod), self.embed[mod])
-            # for evert modality, we will have a transformer
-            self.attn[mod] = MultiHeadedAttention(h, self.embed_dim[mod])
-            self.ff[mod] = PositionwiseFeedForward(self.embed_dim[mod], d_ff, dropout)
-            self.add_module('attn{}'.format(mod), self.attn[mod])
-            self.add_module('ff{}'.format(mod), self.ff[mod])
-            self.transformer[mod] = Encoder(EncoderLayer(self.embed_dim[mod], c(self.attn[mod]), c(self.ff[mod]), dropout), N)
-            self.add_module('transformer_{}'.format(mod), self.transformer[mod])
 
         # Memory fusion network to decode the outputs <- output dim = 1 TODO: check here!
         self.mfn = MFN(mods, self.embed_dim, 1)
@@ -296,7 +289,8 @@ class MultiTransformer(nn.Module):
             embed = self.embed[mod](inputs[mod])
             # print("=== mod:" + mod + " ===")
             # print(inputs[mod])
-            embed = self.transformer[mod](embed, mask) # batch_size, seq_len, self.embed_dim
+            # embed = self.transformer[mod](embed, mask) # batch_size, seq_len, self.embed_dim
+            # skip transformer
             mfn_in[mod] = embed.permute(1,0,2) # seq_len, batch_size, self.embed_dim
             # print("=== mod:" + mod + " ===")
             # print(mfn_in[mod])
@@ -415,70 +409,6 @@ class UniFullTransformer(nn.Module):
         # print(encoder_output.size())
         predicted = self.out(encoder_output) # <- embed to 1
         # print(predicted)
-        # Mask target entries that exceed sequence lengths
-        predicted = predicted * mask.float()
-        return predicted
-
-class NLPTransformer(nn.Module):
-    def __init__(self, window_embed_size, embed_dim=256, h_dim=128, 
-                 N=6, d_ff=128, h=8, dropout=0.1, n_layers=1,
-                 device=torch.device('cuda:0')):
-        super(NLPTransformer, self).__init__()
-        self.embed_dim = embed_dim
-        self.h_dim = h_dim
-        # embedding layers
-        # Create raw-to-embed FC+Dropout layer
-        self.embed = nn.Sequential(nn.Dropout(0.1),
-                                   nn.Linear(window_embed_size, embed_dim),
-                                   nn.ReLU())
-        # modality -> only linguistics -> output embed_dim
-
-        # encoder (6 encoders)
-        # encoder = encoder layer + sublayer connection
-        # encoder layer = attention layer + feedforward + norm layer
-        c = copy.deepcopy
-        attn = MultiHeadedAttention(h, embed_dim)
-        ff = PositionwiseFeedForward(embed_dim, d_ff, dropout)
-        self.encoder = Encoder(EncoderLayer(embed_dim, c(attn), c(ff), dropout), N)
-        # Decodes targets and LSTM hidden states
-        self.decoder = nn.LSTM(2*embed_dim, embed_dim, n_layers, batch_first=True)
-        self.dec_h0 = nn.Parameter(torch.zeros(n_layers, 1, embed_dim))
-        self.dec_c0 = nn.Parameter(torch.zeros(n_layers, 1, embed_dim))
-        # the output will be in the embed_dim dimension
-        # output only 1d
-        self.out = nn.Sequential(nn.Linear(embed_dim, h_dim),
-                                 nn.ReLU(),
-                                 nn.Linear(h_dim, 1))
-        # Store module in specified device (CUDA/CPU)
-        self.device = (device if torch.cuda.is_available() else
-                       torch.device('cpu'))
-        self.to(self.device)
-
-    def forward(self, inputs, mask, lengths, tgt_init=0.5, target=None):
-        # Get batch dim
-        batch_size, seq_len = len(lengths), max(lengths)
-        # Convert raw features into equal-dimensional embeddings
-        embed = self.embed(inputs)
-        encoder_output = self.encoder(embed, mask) # batch_size, seq_len, self.embed_dim
-        # LSTM output from the encoder
-        # Set initial hidden and cell states for decoder
-        h0 = self.dec_h0.repeat(1, batch_size, 1)
-        c0 = self.dec_c0.repeat(1, batch_size, 1)
-        predicted = []
-        # p = torch.ones(batch_size, 1).to(self.device) * tgt_init
-        o_prev = torch.zeros(batch_size, self.embed_dim).to(self.device)
-        h, c = h0, c0
-        for t in range(seq_len):
-            # Concatenate prediction from previous timestep to context
-            i = torch.cat([o_prev, encoder_output[:,t,:]], dim=1).unsqueeze(1)
-            # Get next decoder LSTM state and output
-            o, (h, c) = self.decoder(i, (h, c))
-            o_prev = o.squeeze(1)
-            # Computer prediction from output state
-            p = self.out(o.view(-1, self.embed_dim))
-            predicted.append(p.unsqueeze(1))
-            # print(predicted)
-        predicted = torch.cat(predicted, dim=1)
         # Mask target entries that exceed sequence lengths
         predicted = predicted * mask.float()
         return predicted

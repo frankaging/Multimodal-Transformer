@@ -515,9 +515,9 @@ def main(args):
     args.device = (torch.device(args.device) if torch.cuda.is_available()
                    else torch.device('cpu'))
 
-    args.modalities = ['linguistic', 'acoustic']
+    args.modalities = ['linguistic']
     mod_dimension = {'linguistic' : 300, 'emotient' : 20, 'acoustic' : 988, 'image' : 1000}
-    window_size = {'linguistic' : 5, 'emotient' : 1, 'acoustic' : 1, 'image' : 1, 'ratings' : 1}
+    window_size = {'linguistic' : 5, 'emotient' : 1, 'acoustic' : 1, 'image' : 1, 'ratings' : 5}
 
     # loss function define
     criterion = nn.MSELoss(reduction='sum')
@@ -534,7 +534,7 @@ def main(args):
         input_features_eval, ratings_eval = constructInput(eval_data, channels=args.modalities, window_size=window_size)
         input_padded_eval, seq_lens_eval = padInput(input_features_eval, args.modalities, mod_dimension)
         ratings_padded_eval = padRating(ratings_eval, max(seq_lens_eval))
-        model_path = os.path.join("../lstm_save", "multiTransformer_best.pth")
+        model_path = os.path.join("../lstm_save", "FULLT_L.pth")
         checkpoint = load_checkpoint(model_path, args.device)
         # load the testing parameters
         args.modalities = checkpoint['modalities']
@@ -546,6 +546,9 @@ def main(args):
         ccc, pred, actuals = \
             evaluateOnEval(input_padded_eval, ratings_padded_eval, seq_lens_eval,
                            model, criterion, args)
+        stats = {'ccc': np.mean(ccc), 'ccc_std': np.std(ccc)}
+        logger.info('Evaluation\tCCC(std): {:2.5f}({:2.5f})'.\
+            format(stats['ccc'], stats['ccc_std']))
         # zip and get the top ccc
         pred_ccc = list(zip(pred, ccc))
         pred_ccc.sort(key=itemgetter(1),reverse=True)
@@ -606,7 +609,7 @@ def main(args):
                 scheduler.step(loss)
             if stats['ccc'] > best_ccc:
                 best_ccc = stats['ccc']
-                path = os.path.join("./lstm_save", 'TWEF_AL.pth')
+                path = os.path.join("../lstm_save", 'FULLT_L.pth')
                 save_checkpoint(args.modalities, mod_dimension, window_size, model, path)
             if stats['max_ccc'] > single_best_ccc:
                 single_best_ccc = stats['max_ccc']
@@ -654,7 +657,7 @@ if __name__ == "__main__":
                         help='evaluate on eval set (default: false)')
     parser.add_argument('--load', type=str, default=None,
                         help='path to trained model (either resume or test)')
-    parser.add_argument('--data_dir', type=str, default="../data",
+    parser.add_argument('--data_dir', type=str, default="../../data",
                         help='path to data base directory')
     parser.add_argument('--save_dir', type=str, default="./lstm_save",
                         help='path to save models and predictions')
