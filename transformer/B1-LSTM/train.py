@@ -410,7 +410,7 @@ def ratingInputHelper(input_data, window_size):
     while count_r < len(ratings):
         t = ts[count_r]
         if t <= current_time + window_size:
-            window_rs.append(ratings[count_r][0])
+            window_rs.append(ratings[count_r])
             count_r += 1
         else:
             avg_r = sum(window_rs)*1.0/len(window_rs)
