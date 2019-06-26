@@ -14,6 +14,7 @@ class MultiseqDataset(Dataset):
     def __init__(self, modalities, dirs, regex, preprocess,
                  base_rate=None, truncate=False, item_as_dict=False):
         """Loads valence ratings and features for each modality.
+
         modalities -- names of each input modality
         dirs -- list of directories containing input features
         regex -- regex patterns for the filenames of each modality
@@ -245,12 +246,12 @@ def load_dataset(modalities, base_dir, subset,
         'linguistic_timer': os.path.join(base_dir, 'features', subset, 'linguistic-word-level'),
         'emotient': os.path.join(base_dir, 'features', subset, 'emotient'),
         'emotient_timer': os.path.join(base_dir, 'features', subset, 'emotient'),
-        'ratings' : os.path.join(base_dir, 'ratings', subset, 'observer_avg'),
-        'ratings_timer' : os.path.join(base_dir, 'ratings', subset, 'observer_avg'),
+        'ratings' : os.path.join(base_dir, 'ratings', subset, 'observer_EWE'),
+        'ratings_timer' : os.path.join(base_dir, 'ratings', subset, 'observer_EWE'),
         'image': os.path.join(base_dir, 'features', subset, 'image'),
         'image_timer': os.path.join(base_dir, 'features', subset, 'image'),
-        'acoustic': os.path.join(base_dir, 'features', subset, 'acoustic'),
-        'acoustic_timer': os.path.join(base_dir, 'features', subset, 'acoustic'),
+        'acoustic': os.path.join(base_dir, 'features', subset, 'acoustic-egemaps'),
+        'acoustic_timer': os.path.join(base_dir, 'features', subset, 'acoustic-egemaps'),
     }
     regex = {
         'linguistic': "ID(\d+)_vid(\d+)_.*\.tsv",
@@ -270,11 +271,11 @@ def load_dataset(modalities, base_dir, subset,
         'linguistic': lambda df : df.loc[:,'glove0':'glove299'],
         'emotient_timer': lambda df : df.loc[:,'Frametime'],
         'emotient': lambda df : df.loc[:,'AU1':'AU43'],
-        'ratings' : lambda df : df.drop(columns=['time']) / 100.0,
+        'ratings' : lambda df : df.loc[:,'evaluatorWeightedEstimate'] / 100.0,
         'ratings_timer' : lambda df : df.loc[:,'time'],
         'image': lambda df : df.loc[:,'vector0':'vector999'],
         'image_timer': lambda df : df.loc[:,['Frametime']],
-        'acoustic': lambda df : df.loc[:,' pcm_intensity_sma_max':' F0env_sma_de_iqr1-3'],
+        'acoustic': lambda df : df.loc[:,' F0semitoneFrom27.5Hz_sma3nz_amean':' equivalentSoundLevel_dBp'],
         'acoustic_timer': lambda df : df.loc[:,' frameTime']
     }
     if 'ratings' not in modalities:
