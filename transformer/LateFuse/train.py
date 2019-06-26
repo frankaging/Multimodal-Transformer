@@ -7,7 +7,7 @@ from __future__ import absolute_import
 import sys, os, shutil
 import argparse
 import copy
-import csv
+
 import pandas as pd
 import numpy as np
 from scipy.stats import pearsonr
@@ -75,7 +75,7 @@ def generateTrainBatch(input_data, input_target, input_length, args, batch_size=
     # get chunk
     input_size = len(input_data[list(input_data.keys())[0]]) # all values have same size
     index = [i for i in range(0, input_size)]
-    # shuffle(index)
+    shuffle(index)
     shuffle_chunks = [i for i in chunks(index, batch_size)]
     for chunk in shuffle_chunks:
         # chunk yielding data
@@ -501,11 +501,7 @@ def padRating(input_data, max_len):
         ratingNew[:len(rating)] = rating
         output.append(ratingNew)
     return output
-def getSeqList(seq_ids):
-    ret = []
-    for seq_id in seq_ids:
-        ret.append(seq_id[0]+"_"+seq_id[1])
-    return ret
+
 def main(args):
     # Fix random seed
     torch.manual_seed(1)
@@ -519,7 +515,7 @@ def main(args):
     args.device = (torch.device(args.device) if torch.cuda.is_available()
                    else torch.device('cpu'))
 
-    args.modalities = ['acoustic', 'linguistic']
+    args.modalities = ['linguistic', 'image']
     mod_dimension = {'linguistic' : 300, 'emotient' : 20, 'acoustic' : 988, 'image' : 1000}
     window_size = {'linguistic' : 5, 'emotient' : 1, 'acoustic' : 1, 'image' : 1, 'ratings' : 1}
 
@@ -538,7 +534,7 @@ def main(args):
         input_features_eval, ratings_eval = constructInput(eval_data, channels=args.modalities, window_size=window_size)
         input_padded_eval, seq_lens_eval = padInput(input_features_eval, args.modalities, mod_dimension)
         ratings_padded_eval = padRating(ratings_eval, max(seq_lens_eval))
-        model_path = os.path.join("../model_save/MFN", "MFN_LA.pth")
+        model_path = os.path.join("../lstm_save", "TWMF_LV.pth")
         checkpoint = load_checkpoint(model_path, args.device)
         # load the testing parameters
         args.modalities = checkpoint['modalities']
@@ -554,25 +550,26 @@ def main(args):
         logger.info('Evaluation\tCCC(std): {:2.5f}({:2.5f})'.\
             format(stats['ccc'], stats['ccc_std']))
         # zip and get the top ccc
-        seq_ids = getSeqList(eval_data.seq_ids)
-        seq_pred = dict(zip(seq_ids, pred))
-        seq_actual = dict(zip(seq_ids, actuals))
-        if args.eval:
-            seq_f = "127_6"
-            pred_f = seq_pred["127_6"]
-            actual_f = seq_actual["127_6"]
-        else:
-            seq_f = "116_2"
-            pred_f = seq_pred["116_2"]
-            actual_f = seq_actual["116_2"]
-        output_name = "B3MFN_" + seq_f
-        with open("../pred_save/"+output_name+".csv", mode='w') as f:
-            f_writer = csv.writer(f, delimiter=',')
-            f_writer.writerow(['time', 'pred', 'actual'])
-            t = 0
-            for i in range(0, len(pred_f)):
-                f_writer.writerow([t, pred_f[i], actual_f[i]])
-                t = t + 1
+        pred_ccc = list(zip(pred, ccc))
+        pred_ccc.sort(key=itemgetter(1),reverse=True)
+        pred_sort = []
+        ccc_sort = []
+        for pair in pred_ccc:
+            if len(pred_sort) == TOP_COUNT:
+                break
+            pred_sort.append(pair[0])
+            ccc_sort.append(pair[1])
+
+        actual_ccc = list(zip(actuals, ccc))
+        actual_ccc.sort(key=itemgetter(1),reverse=True)
+        actual_sort = []
+        for pair in actual_ccc:
+            if len(actual_sort) == TOP_COUNT:
+                break
+            actual_sort.append(pair[0])
+
+        # plot the top count prediction vs true
+        plot_eval(pred_sort, ccc_sort, actual_sort, window_size['ratings'])
         return
 
     # construct model
@@ -612,7 +609,7 @@ def main(args):
                 scheduler.step(loss)
             if stats['ccc'] > best_ccc:
                 best_ccc = stats['ccc']
-                path = os.path.join("../lstm_save", 'MFN_AVL.pth')
+                path = os.path.join("../lstm_save", 'TWMF_LV.pth')
                 save_checkpoint(args.modalities, mod_dimension, window_size, model, path)
             if stats['max_ccc'] > single_best_ccc:
                 single_best_ccc = stats['max_ccc']

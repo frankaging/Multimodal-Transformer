@@ -5,7 +5,7 @@ from __future__ import absolute_import
 import torch
 import torch.nn as nn
 from torch.nn.utils.rnn import pack_padded_sequence, pad_packed_sequence
-from multiTransformer import UniTransformer, MultiTransformer, UniFullTransformer, NLPTransformer
+from multiTransformer import UniTransformer, MultiTransformer, UniFullTransformer
 
 def pad_shift(x, shift, padv=0.0):
     """Shift 3D tensor forwards in time with padding."""
@@ -79,7 +79,7 @@ class CNN(nn.Module):
         return x_conv_out
 
 class MultiCNNTransformer(nn.Module):
-    def __init__(self, mods, dims, fuse_embed_size=512, k=2,
+    def __init__(self, mods, dims, fuse_embed_size=256, k=2,
                  device=torch.device('cuda:0')):
         super(MultiCNNTransformer, self).__init__()
         # init
@@ -95,11 +95,9 @@ class MultiCNNTransformer(nn.Module):
             self.add_module('cnn_{}'.format(mod), self.CNN[mod])
             self.add_module('highway_{}'.format(mod), self.Highway[mod])
             total_embed_size += self.window_embed_size[mod]
-        self.fusionLayer = nn.Linear(total_embed_size, fuse_embed_size)
         if len(mods) > 1:
-            print("Using the Early Fusion on Transformer for multiple modalities...")
-            self.Transformer = NLPTransformer(fuse_embed_size)
-            # self.Transformer = MultiTransformer(mods=mods, window_embed_size=self.window_embed_size)
+            print("Using the MFN on Transformer for multiple modalities...")
+            self.Transformer = MultiTransformer(mods=mods, window_embed_size=self.window_embed_size)
         else:
             # make sure it is only 1 mod
             assert len(mods) == 1
@@ -115,7 +113,7 @@ class MultiCNNTransformer(nn.Module):
         inputs = (batch_size, 39, 33, 300)
         '''
         # CNN embedding
-        outputs = []
+        outputs = {}
         for mod in self.mods:
             inputs_mod = inputs[mod]
             outputs_mod = []
@@ -131,12 +129,10 @@ class MultiCNNTransformer(nn.Module):
                 x_word_emb = self.dropout(x_highway)
                 outputs_mod.append(x_word_emb)
             outputs_mod = torch.stack(outputs_mod, dim=0)
-            outputs.append(outputs_mod)
+            outputs[mod] = outputs_mod
         # Transformer with output headers
         if len(outputs) > 1:
-            outputs = torch.cat(outputs, 2)
-            fused_outputs = torch.tanh(self.fusionLayer(outputs))
-            predict = self.Transformer(fused_outputs, mask, length)
+            predict = self.Transformer(outputs, mask, length)
         else:
             predict = self.Transformer(outputs[self.mods[0]], mask, length)
         return predict

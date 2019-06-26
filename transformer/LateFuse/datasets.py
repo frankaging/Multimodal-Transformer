@@ -78,7 +78,6 @@ class MultiseqDataset(Dataset):
         self.lengths = []
         for i in range(len(self.seq_ids)):
             seq_len = float('inf')
-            # print(self.seq_ids[i][0]+"_"+self.seq_ids[i][1])
             # Load each input modality
             for m, data in self.data.items():
                 fp = paths[m][i]

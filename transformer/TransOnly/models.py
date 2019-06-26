@@ -108,7 +108,7 @@ class MultiCNNTransformer(nn.Module):
         inputs = (batch_size, 39, 33, 300)
         '''
         # CNN embedding
-        outputs = {}
+        outputs = []
         for mod in self.mods:
             inputs_mod = inputs[mod]
             outputs_mod = []
@@ -124,7 +124,7 @@ class MultiCNNTransformer(nn.Module):
                 x_word_emb = self.dropout(x_highway)
                 outputs_mod.append(x_word_emb)
             outputs_mod = torch.stack(outputs_mod, dim=0)
-            outputs[mod] = outputs_mod
+            outputs.append(outputs_mod)
         # Transformer with output headers
         if len(outputs) > 1:
             outputs = torch.cat(outputs, 2)

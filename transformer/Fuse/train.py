@@ -7,6 +7,7 @@ from __future__ import absolute_import
 import sys, os, shutil
 import argparse
 import copy
+import csv
 
 import pandas as pd
 import numpy as np
@@ -70,13 +71,15 @@ def generateInputChunkHelper(data_chunk, length_chunk):
 '''
 yielding training batch for the training process
 '''
-def generateTrainBatch(input_data, input_target, input_length, args, batch_size=25):
+def generateTrainBatch(input_data, input_target, input_length, args, batch_size=25, onEval=False):
     # TODO: support input_data as a dictionary
     # get chunk
     input_size = len(input_data[list(input_data.keys())[0]]) # all values have same size
     index = [i for i in range(0, input_size)]
-    shuffle(index)
+    if not onEval:
+        shuffle(index)
     shuffle_chunks = [i for i in chunks(index, batch_size)]
+    print(shuffle_chunks)
     for chunk in shuffle_chunks:
         # chunk yielding data
         yield_input_data = {}
@@ -163,7 +166,8 @@ def evaluateOnEval(input_data, input_target, lengths, model, criterion, args, fi
                                                             input_target,
                                                             lengths,
                                                             args,
-                                                            batch_size=1):
+                                                            batch_size=1,
+                                                            onEval=True):
         # send to device
         mask = mask.to(args.device)
         # send all data to the device
@@ -274,20 +278,26 @@ def plot_predictions(dataset, predictions, metric, args, fig_path=None):
         plt.savefig(fig_path)
     plt.pause(1.0 if args.test else 0.001)
 
-def plot_eval(pred_sort, ccc_sort, actual_sort, window_size=1):
+def plot_eval(pred_sort, ccc_sort, actual_sort, seq_sort, window_size=1):
     sub_graph_count = len(pred_sort)
     fig = plt.figure()
     fig.subplots_adjust(hspace=0.4, wspace=0.4)
 
-    for i in range(1, 7):
-        ax = fig.add_subplot(2, 3, i)
+    for i in range(1, 11):
+        ax = fig.add_subplot(2, 5, i)
 
         ccc = ccc_sort[i-1]
         pred = pred_sort[i-1]
         actual = actual_sort[i-1]
+        seq = seq_sort[i-1]
         minL = min(len(pred), len(actual))
         pred = pred[:minL]
         actual = actual[:minL]
+        # rescale y
+        for i in range(0, len(pred)):
+            pred[i] = (pred[i]-0.5)*2.0
+        for i in range(0, len(actual)):
+            actual[i] = (actual[i]-0.5)*2.0
         t = []
         curr_t = 0.0
         for i in pred:
@@ -299,7 +309,8 @@ def plot_eval(pred_sort, ccc_sort, actual_sort, window_size=1):
         ax.legend()
         ax.set_ylabel('valence(0-10)')
         ax.set_xlabel('time(s)')
-        ax.set_title('ccc='+str(ccc)[:5])
+        ax.set_ylim(-1, 1)
+        ax.set_title('ccc='+str(ccc)[:5]+"-vid="+seq)
     plt.show()
     # plt.savefig("./lstm_save/top_ccc.png")
 
@@ -502,6 +513,12 @@ def padRating(input_data, max_len):
         output.append(ratingNew)
     return output
 
+def getSeqList(seq_ids):
+    ret = []
+    for seq_id in seq_ids:
+        ret.append(seq_id[0]+"_"+seq_id[1])
+    return ret
+
 def main(args):
     # Fix random seed
     torch.manual_seed(1)
@@ -515,7 +532,7 @@ def main(args):
     args.device = (torch.device(args.device) if torch.cuda.is_available()
                    else torch.device('cpu'))
 
-    args.modalities = ['linguistic', 'image']
+    args.modalities = ['linguistic', 'image', 'acoustic']
     mod_dimension = {'linguistic' : 300, 'emotient' : 20, 'acoustic' : 988, 'image' : 1000}
     window_size = {'linguistic' : 5, 'emotient' : 1, 'acoustic' : 1, 'image' : 1, 'ratings' : 1}
 
@@ -528,13 +545,13 @@ def main(args):
         if args.eval:
             eval_dir = "Valid"
         print("evaluating on the " + eval_dir + " Set.")
-        TOP_COUNT = 6
+        TOP_COUNT = 10
         # this data will contain rating but will be excluded for usage
         eval_data = load_data(args.modalities, args.data_dir, eval_dir)
         input_features_eval, ratings_eval = constructInput(eval_data, channels=args.modalities, window_size=window_size)
         input_padded_eval, seq_lens_eval = padInput(input_features_eval, args.modalities, mod_dimension)
         ratings_padded_eval = padRating(ratings_eval, max(seq_lens_eval))
-        model_path = os.path.join("../model_save/Uni", "TWLSTM_A.pth")
+        model_path = os.path.join("../model_save/MF", "TWMF_ALV.pth")
         checkpoint = load_checkpoint(model_path, args.device)
         # load the testing parameters
         args.modalities = checkpoint['modalities']
@@ -550,26 +567,53 @@ def main(args):
         logger.info('Evaluation\tCCC(std): {:2.5f}({:2.5f})'.\
             format(stats['ccc'], stats['ccc_std']))
         # zip and get the top ccc
-        pred_ccc = list(zip(pred, ccc))
-        pred_ccc.sort(key=itemgetter(1),reverse=True)
-        pred_sort = []
-        ccc_sort = []
-        for pair in pred_ccc:
-            if len(pred_sort) == TOP_COUNT:
-                break
-            pred_sort.append(pair[0])
-            ccc_sort.append(pair[1])
+        seq_ids = getSeqList(eval_data.seq_ids)
+        seq_pred = dict(zip(seq_ids, pred))
+        seq_actual = dict(zip(seq_ids, actuals))
+        if args.eval:
+            seq_f = "121_3"
+            pred_f = seq_pred["121_3"]
+            actual_f = seq_actual["121_3"]
+        else:
+            seq_f = "169_2"
+            pred_f = seq_pred["169_2"]
+            actual_f = seq_actual["169_2"]
+        output_name = "TWMF_" + seq_f
+        with open("../pred_save/"+output_name+".csv", mode='w') as f:
+            f_writer = csv.writer(f, delimiter=',')
+            f_writer.writerow(['time', 'pred', 'actual'])
+            t = 0
+            for i in range(0, len(pred_f)):
+                f_writer.writerow([t, pred_f[i], actual_f[i]])
+                t = t + 1
 
-        actual_ccc = list(zip(actuals, ccc))
-        actual_ccc.sort(key=itemgetter(1),reverse=True)
-        actual_sort = []
-        for pair in actual_ccc:
-            if len(actual_sort) == TOP_COUNT:
-                break
-            actual_sort.append(pair[0])
+        # pred_ccc = list(zip(pred, ccc))
+        # seq_ccc = list(zip(seq_ids, ccc))
+        # pred_ccc.sort(key=itemgetter(1),reverse=True)
+        # seq_ccc.sort(key=itemgetter(1),reverse=True)
+        # pred_sort = []
+        # ccc_sort = []
+        # seq_sort = []
+        # for pair in pred_ccc:
+        #     if len(pred_sort) == TOP_COUNT:
+        #         break
+        #     pred_sort.append(pair[0])
+        #     ccc_sort.append(pair[1])
+        # for pair in seq_ccc:
+        #     if len(seq_sort) == TOP_COUNT:
+        #         break
+        #     seq_sort.append(pair[0])
 
-        # plot the top count prediction vs true
-        plot_eval(pred_sort, ccc_sort, actual_sort, window_size['ratings'])
+        # actual_ccc = list(zip(actuals, ccc))
+        # actual_ccc.sort(key=itemgetter(1),reverse=True)
+        # actual_sort = []
+        # for pair in actual_ccc:
+        #     if len(actual_sort) == TOP_COUNT:
+        #         break
+        #     actual_sort.append(pair[0])
+
+        # # plot the top count prediction vs true
+        # plot_eval(pred_sort, ccc_sort, actual_sort, seq_sort, window_size['ratings'])
         return
 
     # construct model
