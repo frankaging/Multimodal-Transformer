@@ -613,7 +613,7 @@ def main(args):
                              model, criterion, args)
             if stats['ccc'] > best_ccc:
                 best_ccc = stats['ccc']
-                path = os.path.join("./ModelSave/B1-LSTM", 'B1-LSTM-V.pth')
+                path = os.path.join("../ModelSave/B1-LSTM", 'B1-LSTM-V.pth')
                 save_checkpoint(args.modalities, mod_dimension, window_size, model, path)
             if stats['max_ccc'] > single_best_ccc:
                 single_best_ccc = stats['max_ccc']

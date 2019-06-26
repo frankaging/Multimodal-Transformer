@@ -407,7 +407,7 @@ def ratingInputHelper(input_data, window_size):
     while count_r < len(ratings):
         t = ts[count_r]
         if t <= current_time + window_size:
-            window_rs.append(ratings[count_r][0])
+            window_rs.append(ratings[count_r])
             count_r += 1
         else:
             avg_r = sum(window_rs)*1.0/len(window_rs)
@@ -613,7 +613,7 @@ def main(args):
                 scheduler.step(loss)
             if stats['ccc'] > best_ccc:
                 best_ccc = stats['ccc']
-                path = os.path.join("../lstm_save", 'FULLT_L.pth')
+                path = os.path.join("../ModelSave/B2-Trans", "B2-Trans-V.pth")
                 save_checkpoint(args.modalities, mod_dimension, window_size, model, path)
             if stats['max_ccc'] > single_best_ccc:
                 single_best_ccc = stats['max_ccc']
