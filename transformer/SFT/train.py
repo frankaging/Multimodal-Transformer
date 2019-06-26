@@ -523,7 +523,7 @@ def main(args):
     args.device = (torch.device(args.device) if torch.cuda.is_available()
                    else torch.device('cpu'))
 
-    args.modalities = ['image', 'linguistic']
+    args.modalities = ['image']
     mod_dimension = {'linguistic' : 300, 'emotient' : 20, 'acoustic' : 988, 'image' : 1000}
     window_size = {'linguistic' : 5, 'emotient' : 1, 'acoustic' : 1, 'image' : 1, 'ratings' : 1}
 
@@ -615,7 +615,7 @@ def main(args):
                 scheduler.step(loss)
             if stats['ccc'] > best_ccc:
                 best_ccc = stats['ccc']
-                path = os.path.join("../lstm_save", 'TWEF_ALV.pth')
+                path = os.path.join("../ModelSave/SFT", 'SFT-V.pth')
                 save_checkpoint(args.modalities, mod_dimension, window_size, model, path)
             if stats['max_ccc'] > single_best_ccc:
                 single_best_ccc = stats['max_ccc']

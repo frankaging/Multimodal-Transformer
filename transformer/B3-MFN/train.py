@@ -519,7 +519,7 @@ def main(args):
     args.device = (torch.device(args.device) if torch.cuda.is_available()
                    else torch.device('cpu'))
 
-    args.modalities = ['acoustic', 'linguistic']
+    args.modalities = ['image']
     mod_dimension = {'linguistic' : 300, 'emotient' : 20, 'acoustic' : 988, 'image' : 1000}
     window_size = {'linguistic' : 5, 'emotient' : 1, 'acoustic' : 1, 'image' : 1, 'ratings' : 1}
 
@@ -532,13 +532,13 @@ def main(args):
         if args.eval:
             eval_dir = "Valid"
         print("evaluating on the " + eval_dir + " Set.")
-        TOP_COUNT = 6
+        TOP_COUNT = 6∂
         # this data will contain rating but will be excluded for usage
         eval_data = load_data(args.modalities, args.data_dir, eval_dir)
         input_features_eval, ratings_eval = constructInput(eval_data, channels=args.modalities, window_size=window_size)
         input_padded_eval, seq_lens_eval = padInput(input_features_eval, args.modalities, mod_dimension)
         ratings_padded_eval = padRating(ratings_eval, max(seq_lens_eval))
-        model_path = os.path.join("../model_save/MFN", "MFN_LA.pth")
+        model_path = os.path.join("../ModelSave/B3-MFN", "B3-MFN-V.pth")
         checkpoint = load_checkpoint(model_path, args.device)
         # load the testing parameters
         args.modalities = checkpoint['modalities']
