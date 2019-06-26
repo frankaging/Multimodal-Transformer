@@ -661,7 +661,7 @@ if __name__ == "__main__":
                         help='evaluate on eval set (default: false)')
     parser.add_argument('--load', type=str, default=None,
                         help='path to trained model (either resume or test)')
-    parser.add_argument('--data_dir', type=str, default="../../data",
+    parser.add_argument('--data_dir', type=str, default="../../../SENDv1-data",
                         help='path to data base directory')
     parser.add_argument('--save_dir', type=str, default="./lstm_save",
                         help='path to save models and predictions')
