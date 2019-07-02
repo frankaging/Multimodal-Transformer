@@ -138,7 +138,7 @@ class MultiCNNTransformer(nn.Module):
             fused_outputs = torch.tanh(self.fusionLayer(outputs))
             predict = self.Transformer(fused_outputs, mask, length)
         else:
-            predict = self.Transformer(outputs[self.mods[0]], mask, length)
+            predict = self.Transformer(outputs[0], mask, length)
         return predict
 
 class MultiLSTM(nn.Module):

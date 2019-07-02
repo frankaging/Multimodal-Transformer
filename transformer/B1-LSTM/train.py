@@ -524,13 +524,18 @@ def main(args):
                    else torch.device('cpu'))
 
     args.modalities = ['image']
-    mod_dimension = {'linguistic' : 300, 'emotient' : 20, 'acoustic' : 988, 'image' : 1000}
+    mod_dimension = {'linguistic' : 300, 'emotient' : 20, 'acoustic' : 88, 'image' : 1000}
     window_size = {'linguistic' : 5, 'emotient' : 1, 'acoustic' : 1, 'image' : 1, 'ratings' : 1}
 
     # loss function define
     criterion = nn.MSELoss(reduction='sum')
 
     # TODO: case for only making prediction on eval/test set
+    if args.perf:
+        for eval_dir in ["Train", "Valid", "Test"]:
+            print("Evaluating performances in " + eval_dir)
+
+
     if args.test or args.eval:
         eval_dir = "Test"
         if args.eval:
@@ -542,7 +547,7 @@ def main(args):
         input_features_eval, ratings_eval = constructInput(eval_data, channels=args.modalities, window_size=window_size)
         input_padded_eval, seq_lens_eval = padInput(input_features_eval, args.modalities, mod_dimension)
         ratings_padded_eval = padRating(ratings_eval, max(seq_lens_eval))
-        model_path = os.path.join("../model_save/CNN_LSTM", "CNN_LSTM_TV.pth")
+        model_path = os.path.join("../ModelSave/B1-LSTM", 'B1-LSTM-VAL.pth')
         checkpoint = load_checkpoint(model_path, args.device)
         # load the testing parameters
         args.modalities = checkpoint['modalities']
@@ -558,24 +563,27 @@ def main(args):
         logger.info('Evaluation\tCCC(std): {:2.5f}({:2.5f})'.\
             format(stats['ccc'], stats['ccc_std']))
         seq_ids = getSeqList(eval_data.seq_ids)
-        seq_pred = dict(zip(seq_ids, pred))
-        seq_actual = dict(zip(seq_ids, actuals))
-        if args.eval:
-            seq_f = "127_6"
-            pred_f = seq_pred["127_6"]
-            actual_f = seq_actual["127_6"]
-        else:
-            seq_f = "116_2"
-            pred_f = seq_pred["116_2"]
-            actual_f = seq_actual["116_2"]
-        output_name = "B1LSTM_" + seq_f
-        with open("../pred_save/"+output_name+".csv", mode='w') as f:
-            f_writer = csv.writer(f, delimiter=',')
-            f_writer.writerow(['time', 'pred', 'actual'])
-            t = 0
-            for i in range(0, len(pred_f)):
-                f_writer.writerow([t, pred_f[i], actual_f[i]])
-                t = t + 1
+        seq_ccc = list(zip(seq_ids, ccc))
+
+
+        # seq_pred = dict(zip(seq_ids, pred))
+        # seq_actual = dict(zip(seq_ids, actuals))
+        # if args.eval:
+        #     seq_f = "127_6"
+        #     pred_f = seq_pred["127_6"]
+        #     actual_f = seq_actual["127_6"]
+        # else:
+        #     seq_f = "116_2"
+        #     pred_f = seq_pred["116_2"]
+        #     actual_f = seq_actual["116_2"]
+        # output_name = "B1LSTM_" + seq_f
+        # with open("../pred_save/"+output_name+".csv", mode='w') as f:
+        #     f_writer = csv.writer(f, delimiter=',')
+        #     f_writer.writerow(['time', 'pred', 'actual'])
+        #     t = 0
+        #     for i in range(0, len(pred_f)):
+        #         f_writer.writerow([t, pred_f[i], actual_f[i]])
+        #         t = t + 1
         return
 
     # construct model
@@ -613,7 +621,7 @@ def main(args):
                              model, criterion, args)
             if stats['ccc'] > best_ccc:
                 best_ccc = stats['ccc']
-                path = os.path.join("../ModelSave/B1-LSTM", 'B1-LSTM-V.pth')
+                path = os.path.join("../ModelSave/B1-LSTM", 'B1-LSTM-A.pth')
                 save_checkpoint(args.modalities, mod_dimension, window_size, model, path)
             if stats['max_ccc'] > single_best_ccc:
                 single_best_ccc = stats['max_ccc']
@@ -659,6 +667,8 @@ if __name__ == "__main__":
                         help='evaluate on test set (default: false)')
     parser.add_argument('--eval', action='store_true', default=False,
                         help='evaluate on eval set (default: false)')
+    parser.add_argument('--perf', action='store_true', default=False,
+                        help='evaluate on performance (default: false)')
     parser.add_argument('--load', type=str, default=None,
                         help='path to trained model (either resume or test)')
     parser.add_argument('--data_dir', type=str, default="../../../SENDv1-data",

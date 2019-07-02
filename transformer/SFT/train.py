@@ -275,20 +275,26 @@ def plot_predictions(dataset, predictions, metric, args, fig_path=None):
         plt.savefig(fig_path)
     plt.pause(1.0 if args.test else 0.001)
 
-def plot_eval(pred_sort, ccc_sort, actual_sort, window_size=1):
+def plot_eval(pred_sort, ccc_sort, actual_sort, seq_sort, window_size=5):
     sub_graph_count = len(pred_sort)
     fig = plt.figure()
     fig.subplots_adjust(hspace=0.4, wspace=0.4)
 
-    for i in range(1, 7):
-        ax = fig.add_subplot(2, 3, i)
+    for i in range(1, 11):
+        ax = fig.add_subplot(2, 5, i)
 
         ccc = ccc_sort[i-1]
         pred = pred_sort[i-1]
         actual = actual_sort[i-1]
+        seq = seq_sort[i-1]
         minL = min(len(pred), len(actual))
         pred = pred[:minL]
         actual = actual[:minL]
+        # rescale y
+        for i in range(0, len(pred)):
+            pred[i] = (pred[i]-0.5)*2.0
+        for i in range(0, len(actual)):
+            actual[i] = (actual[i]-0.5)*2.0
         t = []
         curr_t = 0.0
         for i in pred:
@@ -298,9 +304,10 @@ def plot_eval(pred_sort, ccc_sort, actual_sort, window_size=1):
         ax.legend()
         actual_line, = ax.plot(t, actual, '-', color='b', linewidth=2.0, label='True')
         ax.legend()
-        ax.set_ylabel('valence(0-10)')
+        ax.set_ylabel('valence(0-1)')
         ax.set_xlabel('time(s)')
-        ax.set_title('ccc='+str(ccc)[:5])
+        ax.set_ylim(-1, 1)
+        ax.set_title('ccc='+str(ccc)[:5]+"-vid="+seq)
     plt.show()
     # plt.savefig("./lstm_save/top_ccc.png")
 
@@ -523,8 +530,8 @@ def main(args):
     args.device = (torch.device(args.device) if torch.cuda.is_available()
                    else torch.device('cpu'))
 
-    args.modalities = ['image']
-    mod_dimension = {'linguistic' : 300, 'emotient' : 20, 'acoustic' : 988, 'image' : 1000}
+    args.modalities = ['image', 'linguistic']
+    mod_dimension = {'linguistic' : 300, 'emotient' : 20, 'acoustic' : 88, 'image' : 1000}
     window_size = {'linguistic' : 5, 'emotient' : 1, 'acoustic' : 1, 'image' : 1, 'ratings' : 1}
 
     # loss function define
@@ -536,13 +543,13 @@ def main(args):
         if args.eval:
             eval_dir = "Valid"
         print("evaluating on the " + eval_dir + " Set.")
-        TOP_COUNT = 6
+        TOP_COUNT = 10
         # this data will contain rating but will be excluded for usage
         eval_data = load_data(args.modalities, args.data_dir, eval_dir)
         input_features_eval, ratings_eval = constructInput(eval_data, channels=args.modalities, window_size=window_size)
         input_padded_eval, seq_lens_eval = padInput(input_features_eval, args.modalities, mod_dimension)
         ratings_padded_eval = padRating(ratings_eval, max(seq_lens_eval))
-        model_path = os.path.join("../model_save/EF", "TWEF_LV.pth")
+        model_path = os.path.join("../ModelSave/SFT", 'SFT-VL.pth')
         checkpoint = load_checkpoint(model_path, args.device)
         # load the testing parameters
         args.modalities = checkpoint['modalities']
@@ -557,19 +564,49 @@ def main(args):
         stats = {'ccc': np.mean(ccc), 'ccc_std': np.std(ccc)}
         logger.info('Evaluation\tCCC(std): {:2.5f}({:2.5f})'.\
             format(stats['ccc'], stats['ccc_std']))
+
         seq_ids = getSeqList(eval_data.seq_ids)
         seq_pred = dict(zip(seq_ids, pred))
         seq_actual = dict(zip(seq_ids, actuals))
+
+        # pred_ccc = list(zip(pred, ccc))
+        # seq_ccc = list(zip(seq_ids, ccc))
+        # pred_ccc.sort(key=itemgetter(1),reverse=True)
+        # seq_ccc.sort(key=itemgetter(1),reverse=True)
+        # pred_sort = []
+        # ccc_sort = []
+        # seq_sort = []
+        # for pair in pred_ccc:
+        #     if len(pred_sort) == TOP_COUNT:
+        #         break
+        #     pred_sort.append(pair[0])
+        #     ccc_sort.append(pair[1])
+        # for pair in seq_ccc:
+        #     if len(seq_sort) == TOP_COUNT:
+        #         break
+        #     seq_sort.append(pair[0])
+
+        # actual_ccc = list(zip(actuals, ccc))
+        # actual_ccc.sort(key=itemgetter(1),reverse=True)
+        # actual_sort = []
+        # for pair in actual_ccc:
+        #     if len(actual_sort) == TOP_COUNT:
+        #         break
+        #     actual_sort.append(pair[0])
+
+        # # plot the top count prediction vs true
+        # plot_eval(pred_sort, ccc_sort, actual_sort, seq_sort, window_size['ratings'])
+
         if args.eval:
-            seq_f = "121_3"
-            pred_f = seq_pred["121_3"]
-            actual_f = seq_actual["121_3"]
+            seq_f = "173_4"
+            pred_f = seq_pred["173_4"]
+            actual_f = seq_actual["173_4"]
         else:
-            seq_f = "169_2"
-            pred_f = seq_pred["169_2"]
-            actual_f = seq_actual["169_2"]
-        output_name = "TWEF_" + seq_f
-        with open("../pred_save/"+output_name+".csv", mode='w') as f:
+            seq_f = "165_2"
+            pred_f = seq_pred["165_2"]
+            actual_f = seq_actual["165_2"]
+        output_name = "SFT" + seq_f
+        with open("../PredSave/"+output_name+".csv", mode='w') as f:
             f_writer = csv.writer(f, delimiter=',')
             f_writer.writerow(['time', 'pred', 'actual'])
             t = 0

@@ -520,8 +520,8 @@ def main(args):
     args.device = (torch.device(args.device) if torch.cuda.is_available()
                    else torch.device('cpu'))
 
-    args.modalities = ['image']
-    mod_dimension = {'linguistic' : 300, 'emotient' : 20, 'acoustic' : 988, 'image' : 1000}
+    args.modalities = ['image', 'linguistic', 'acoustic']
+    mod_dimension = {'linguistic' : 300, 'emotient' : 20, 'acoustic' : 88, 'image' : 1000}
     window_size = {'linguistic' : 5, 'emotient' : 1, 'acoustic' : 1, 'image' : 1, 'ratings' : 1}
 
     # loss function define
@@ -539,12 +539,15 @@ def main(args):
         input_features_eval, ratings_eval = constructInput(eval_data, channels=args.modalities, window_size=window_size)
         input_padded_eval, seq_lens_eval = padInput(input_features_eval, args.modalities, mod_dimension)
         ratings_padded_eval = padRating(ratings_eval, max(seq_lens_eval))
-        model_path = os.path.join("../ModelSave/B2-Trans", "B2-Trans-V.pth")
+        model_path = os.path.join("../ModelSave/B2-Trans", "B2-Trans-VAL.pth")
         checkpoint = load_checkpoint(model_path, args.device)
         # load the testing parameters
         args.modalities = checkpoint['modalities']
         mod_dimension = checkpoint['mod_dimension']
         window_size = checkpoint['window_size']
+        print("Saved modality: " + str(checkpoint['modalities']))
+        print("Saved mod_dimension: " + str(checkpoint['mod_dimension']))
+        print("Saved window_size: " + str(checkpoint['window_size']))
         # construct model
         model = MultiCNNTransformer(mods=args.modalities, dims=mod_dimension, device=args.device)
         model.load_state_dict(checkpoint['model'])
@@ -555,25 +558,25 @@ def main(args):
         logger.info('Evaluation\tCCC(std): {:2.5f}({:2.5f})'.\
             format(stats['ccc'], stats['ccc_std']))
         # zip and get the top ccc
-        seq_ids = getSeqList(eval_data.seq_ids)
-        seq_pred = dict(zip(seq_ids, pred))
-        seq_actual = dict(zip(seq_ids, actuals))
-        if args.eval:
-            seq_f = "127_6"
-            pred_f = seq_pred["127_6"]
-            actual_f = seq_actual["127_6"]
-        else:
-            seq_f = "116_2"
-            pred_f = seq_pred["116_2"]
-            actual_f = seq_actual["116_2"]
-        output_name = "B2FULLT_" + seq_f
-        with open("../pred_save/"+output_name+".csv", mode='w') as f:
-            f_writer = csv.writer(f, delimiter=',')
-            f_writer.writerow(['time', 'pred', 'actual'])
-            t = 0
-            for i in range(0, len(pred_f)):
-                f_writer.writerow([t, pred_f[i], actual_f[i]])
-                t = t + 1
+        # seq_ids = getSeqList(eval_data.seq_ids)
+        # seq_pred = dict(zip(seq_ids, pred))
+        # seq_actual = dict(zip(seq_ids, actuals))
+        # if args.eval:
+        #     seq_f = "127_6"
+        #     pred_f = seq_pred["127_6"]
+        #     actual_f = seq_actual["127_6"]
+        # else:
+        #     seq_f = "116_2"
+        #     pred_f = seq_pred["116_2"]
+        #     actual_f = seq_actual["116_2"]
+        # output_name = "B2FULLT_" + seq_f
+        # with open("../pred_save/"+output_name+".csv", mode='w') as f:
+        #     f_writer = csv.writer(f, delimiter=',')
+        #     f_writer.writerow(['time', 'pred', 'actual'])
+        #     t = 0
+        #     for i in range(0, len(pred_f)):
+        #         f_writer.writerow([t, pred_f[i], actual_f[i]])
+        #         t = t + 1
         return
 
     # construct model
@@ -613,7 +616,7 @@ def main(args):
                 scheduler.step(loss)
             if stats['ccc'] > best_ccc:
                 best_ccc = stats['ccc']
-                path = os.path.join("../ModelSave/B2-Trans", "B2-Trans-V.pth")
+                path = os.path.join("../ModelSave/B2-Trans", "B2-Trans-L.pth")
                 save_checkpoint(args.modalities, mod_dimension, window_size, model, path)
             if stats['max_ccc'] > single_best_ccc:
                 single_best_ccc = stats['max_ccc']
@@ -635,7 +638,7 @@ if __name__ == "__main__":
                         help='input batch size for training (default: 10)')
     parser.add_argument('--split', type=int, default=1, metavar='N',
                         help='sections to split each video into (default: 1)')
-    parser.add_argument('--epochs', type=int, default=9999, metavar='N',
+    parser.add_argument('--epochs', type=int, default=700, metavar='N',
                         help='number of epochs to train (default: 1000)')
     parser.add_argument('--lr', type=float, default=1e-4, metavar='LR',
                         help='learning rate (default: 1e-6)')
