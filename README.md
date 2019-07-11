@@ -11,7 +11,7 @@
 	}
 
 ## What it is?
-This repo consist 5 different deep neural networks of modeling multi-modal inputs. This repo contains evaluation scripts and pre-trained models.
+This repo consist 5 different deep neural networks predicting emotion valence with multi-modal inputs. This repo contains evaluation scripts and pre-trained models.
 
 ## Description
 Attention mechanisms in deep neural networks have achieved excellent performance on sequence-prediction tasks. Here, we show that these recently-proposed attention-based mechanisms---in particular, the *Transformer* with its parallelizable self-attention layers, and the *Memory Fusion Network* with attention across modalities and time---also generalize well to multimodal time-series emotion recognition. Using a recently-introduced dataset of emotional autobiographical narratives, 
