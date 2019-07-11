@@ -532,139 +532,73 @@ def main(args):
     args.device = (torch.device(args.device) if torch.cuda.is_available()
                    else torch.device('cpu'))
 
-    args.modalities = ['linguistic', 'image', 'acoustic']
-    mod_dimension = {'linguistic' : 300, 'emotient' : 20, 'acoustic' : 88, 'image' : 1000}
-    window_size = {'linguistic' : 5, 'emotient' : 1, 'acoustic' : 1, 'image' : 1, 'ratings' : 1}
-
     # loss function define
     criterion = nn.MSELoss(reduction='sum')
 
-    # TODO: case for only making prediction on eval/test set
-    if args.test or args.eval:
-        eval_dir = "Test"
-        if args.eval:
-            eval_dir = "Valid"
-        print("evaluating on the " + eval_dir + " Set.")
-        TOP_COUNT = 10
-        # this data will contain rating but will be excluded for usage
-        eval_data = load_data(args.modalities, args.data_dir, eval_dir)
-        input_features_eval, ratings_eval = constructInput(eval_data, channels=args.modalities, window_size=window_size)
-        input_padded_eval, seq_lens_eval = padInput(input_features_eval, args.modalities, mod_dimension)
-        ratings_padded_eval = padRating(ratings_eval, max(seq_lens_eval))
-        model_path = os.path.join("../ModelSave/MFT", 'MFT-VAL.pth')
-        checkpoint = load_checkpoint(model_path, args.device)
-        # load the testing parameters
-        args.modalities = checkpoint['modalities']
-        mod_dimension = checkpoint['mod_dimension']
-        window_size = checkpoint['window_size']
-        # construct model
-        model = MultiCNNTransformer(mods=args.modalities, dims=mod_dimension, device=args.device)
-        model.load_state_dict(checkpoint['model'])
-        ccc, pred, actuals = \
-            evaluateOnEval(input_padded_eval, ratings_padded_eval, seq_lens_eval,
-                           model, criterion, args)
-        stats = {'ccc': np.mean(ccc), 'ccc_std': np.std(ccc)}
-        logger.info('Evaluation\tCCC(std): {:2.5f}({:2.5f})'.\
-            format(stats['ccc'], stats['ccc_std']))
-        # zip and get the top ccc
-        seq_ids = getSeqList(eval_data.seq_ids)
-        seq_pred = dict(zip(seq_ids, pred))
-        seq_actual = dict(zip(seq_ids, actuals))
+    combs = ["VA", "AL", "VAL"]
+    dims = [88, 44]
+    for A_dim in dims:
+        for comb in combs:
+            print("Running output as - ../ModelSave/MFT", 'MFT-' + comb + '-' + str(A_dim) + '.pth')
+            args.modalities = []
+            if "A" in comb:
+                args.modalities.append('acoustic')
+            if "V" in comb:
+                args.modalities.append('image')
+            if "L" in comb:
+                args.modalities.append('linguistic')
+            mod_dimension = {'linguistic' : 300, 'emotient' : 20, 'acoustic' : 88, 'image' : 1000}
+            window_size = {'linguistic' : 5, 'emotient' : 1, 'acoustic' : 1, 'image' : 1, 'ratings' : 1}
+            window_embed_size={'linguistic' : 300, 'emotient' : 20, 'acoustic' : A_dim, 'image' : 256}
 
-        if args.eval:
-            seq_f = "173_4"
-            pred_f = seq_pred["173_4"]
-            actual_f = seq_actual["173_4"]
-        else:
-            seq_f = "165_2"
-            pred_f = seq_pred["165_2"]
-            actual_f = seq_actual["165_2"]
-        output_name = "MFT" + seq_f
-        with open("../PredSave/"+output_name+".csv", mode='w') as f:
-            f_writer = csv.writer(f, delimiter=',')
-            f_writer.writerow(['time', 'pred', 'actual'])
-            t = 0
-            for i in range(0, len(pred_f)):
-                f_writer.writerow([t, pred_f[i], actual_f[i]])
-                t = t + 1
+            # construct model
+            model = MultiCNNTransformer(mods=args.modalities, dims=mod_dimension, embed_dims=window_embed_size, device=args.device)
+            # Setting the optimizer
+            optimizer = optim.Adam(model.parameters(), lr=args.lr, weight_decay=1e-4)
+            scheduler = ReduceLROnPlateau(optimizer,mode='min',patience=100,factor=0.5,verbose=True)
+            # Load data for specified modalities
+            train_data, test_data = load_data(args.modalities, args.data_dir)
+            # training data
+            input_features_train, ratings_train = constructInput(train_data, channels=args.modalities, window_size=window_size)
+            input_padded_train, seq_lens_train = padInput(input_features_train, args.modalities, mod_dimension)
+            ratings_padded_train = padRating(ratings_train, max(seq_lens_train))
+            # testing data
+            input_features_test, ratings_test = constructInput(test_data, channels=args.modalities, window_size=window_size)
+            input_padded_test, seq_lens_test = padInput(input_features_test, args.modalities, mod_dimension)
+            ratings_padded_test = padRating(ratings_test, max(seq_lens_test))
 
-        # pred_ccc = list(zip(pred, ccc))
-        # seq_ccc = list(zip(seq_ids, ccc))
-        # pred_ccc.sort(key=itemgetter(1),reverse=True)
-        # seq_ccc.sort(key=itemgetter(1),reverse=True)
-        # pred_sort = []
-        # ccc_sort = []
-        # seq_sort = []
-        # for pair in pred_ccc:
-        #     if len(pred_sort) == TOP_COUNT:
-        #         break
-        #     pred_sort.append(pair[0])
-        #     ccc_sort.append(pair[1])
-        # for pair in seq_ccc:
-        #     if len(seq_sort) == TOP_COUNT:
-        #         break
-        #     seq_sort.append(pair[0])
+            # TODO: could remove this if accept dictionary inputs
+            # input_padded_train = {'linguistic' : [117*39*33*300], 'emotient' : []}
+            input_train = input_padded_train
+            input_test = input_padded_test
 
-        # actual_ccc = list(zip(actuals, ccc))
-        # actual_ccc.sort(key=itemgetter(1),reverse=True)
-        # actual_sort = []
-        # for pair in actual_ccc:
-        #     if len(actual_sort) == TOP_COUNT:
-        #         break
-        #     actual_sort.append(pair[0])
-
-        # # plot the top count prediction vs true
-        # plot_eval(pred_sort, ccc_sort, actual_sort, seq_sort, window_size['ratings'])
-        return
-
-    # construct model
-    model = MultiCNNTransformer(mods=args.modalities, dims=mod_dimension, device=args.device)
-    # Setting the optimizer
-    optimizer = optim.Adam(model.parameters(), lr=args.lr, weight_decay=1e-4)
-    scheduler = ReduceLROnPlateau(optimizer,mode='min',patience=100,factor=0.5,verbose=True)
-    # Load data for specified modalities
-    train_data, test_data = load_data(args.modalities, args.data_dir)
-    # training data
-    input_features_train, ratings_train = constructInput(train_data, channels=args.modalities, window_size=window_size)
-    input_padded_train, seq_lens_train = padInput(input_features_train, args.modalities, mod_dimension)
-    ratings_padded_train = padRating(ratings_train, max(seq_lens_train))
-    # testing data
-    input_features_test, ratings_test = constructInput(test_data, channels=args.modalities, window_size=window_size)
-    input_padded_test, seq_lens_test = padInput(input_features_test, args.modalities, mod_dimension)
-    ratings_padded_test = padRating(ratings_test, max(seq_lens_test))
-
-    # TODO: could remove this if accept dictionary inputs
-    # input_padded_train = {'linguistic' : [117*39*33*300], 'emotient' : []}
-    input_train = input_padded_train
-    input_test = input_padded_test
-
-    # Train and save best model
-    best_ccc = -1
-    single_best_ccc = -1
-    for epoch in range(1, args.epochs+1):
-        print('---')
-        train(input_train, ratings_padded_train, seq_lens_train,
-              model, criterion, optimizer, epoch, args)
-        if epoch % args.eval_freq == 0:
-            with torch.no_grad():
-                pred, loss, stats, (local_best_output, local_best_target, local_best_index) =\
-                    evaluate(input_test, ratings_padded_test, seq_lens_test,
-                             model, criterion, args)
-                # reduce LR if necessary
-                scheduler.step(loss)
-            if stats['ccc'] > best_ccc:
-                best_ccc = stats['ccc']
-                path = os.path.join("../ModelSave/MFT", 'MFT-VAL.pth')
-                save_checkpoint(args.modalities, mod_dimension, window_size, model, path)
-            if stats['max_ccc'] > single_best_ccc:
-                single_best_ccc = stats['max_ccc']
-                logger.info('===single_max_predict===')
-                logger.info(local_best_output)
-                logger.info(local_best_target)
-                logger.info(local_best_index)
-                logger.info('===end single_max_predict===')
-            logger.info('CCC_STATS\tSINGLE_BEST: {:0.9f}\tBEST: {:0.9f}'.\
-            format(single_best_ccc, best_ccc))
+            # Train and save best model
+            best_ccc = -1
+            single_best_ccc = -1
+            for epoch in range(1, args.epochs+1):
+                print('---')
+                train(input_train, ratings_padded_train, seq_lens_train,
+                    model, criterion, optimizer, epoch, args)
+                if epoch % args.eval_freq == 0:
+                    with torch.no_grad():
+                        pred, loss, stats, (local_best_output, local_best_target, local_best_index) =\
+                            evaluate(input_test, ratings_padded_test, seq_lens_test,
+                                    model, criterion, args)
+                        # reduce LR if necessary
+                        scheduler.step(loss)
+                    if stats['ccc'] > best_ccc:
+                        best_ccc = stats['ccc']
+                        path = os.path.join("../ModelSave/MFT", 'MFT-' + comb + '-' + str(A_dim) + '.pth')
+                        save_checkpoint(args.modalities, mod_dimension, window_size, model, path)
+                    if stats['max_ccc'] > single_best_ccc:
+                        single_best_ccc = stats['max_ccc']
+                        logger.info('===single_max_predict===')
+                        logger.info(local_best_output)
+                        logger.info(local_best_target)
+                        logger.info(local_best_index)
+                        logger.info('===end single_max_predict===')
+                    logger.info('CCC_STATS\tSINGLE_BEST: {:0.9f}\tBEST: {:0.9f}'.\
+                    format(single_best_ccc, best_ccc))
 
     return best_ccc
 
@@ -676,7 +610,7 @@ if __name__ == "__main__":
                         help='input batch size for training (default: 10)')
     parser.add_argument('--split', type=int, default=1, metavar='N',
                         help='sections to split each video into (default: 1)')
-    parser.add_argument('--epochs', type=int, default=9999, metavar='N',
+    parser.add_argument('--epochs', type=int, default=500, metavar='N',
                         help='number of epochs to train (default: 1000)')
     parser.add_argument('--lr', type=float, default=1e-4, metavar='LR',
                         help='learning rate (default: 1e-6)')

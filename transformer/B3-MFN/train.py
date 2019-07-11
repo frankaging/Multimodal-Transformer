@@ -501,11 +501,13 @@ def padRating(input_data, max_len):
         ratingNew[:len(rating)] = rating
         output.append(ratingNew)
     return output
+
 def getSeqList(seq_ids):
     ret = []
     for seq_id in seq_ids:
         ret.append(seq_id[0]+"_"+seq_id[1])
     return ret
+
 def main(args):
     # Fix random seed
     torch.manual_seed(1)
@@ -519,61 +521,27 @@ def main(args):
     args.device = (torch.device(args.device) if torch.cuda.is_available()
                    else torch.device('cpu'))
 
+    combs = ["A", "VA", "AL", "VAL"]
+    dims = [88, 44]
+    for dim in dims:
+        for comb in combs:
+            args.modalities = []
+            if "A" in comb:
+                args.modalities += 'acoustic'
+            if "V" in comb:
+                args.modalities += 'image'
+            if "L" in comb:
+                args.modalities += 'linguistic'
+            mod_dimension = {'linguistic' : 300, 'emotient' : 20, 'acoustic' : dim, 'image' : 1000}
+            window_size = {'linguistic' : 5, 'emotient' : 1, 'acoustic' : 1, 'image' : 1, 'ratings' : 1}
+
+
     args.modalities = ['linguistic', 'image', 'acoustic']
     mod_dimension = {'linguistic' : 300, 'emotient' : 20, 'acoustic' : 88, 'image' : 1000}
     window_size = {'linguistic' : 5, 'emotient' : 1, 'acoustic' : 1, 'image' : 1, 'ratings' : 1}
 
     # loss function define
     criterion = nn.MSELoss(reduction='sum')
-
-    # TODO: case for only making prediction on eval/test set
-    if args.test or args.eval:
-        eval_dir = "Test"
-        if args.eval:
-            eval_dir = "Valid"
-        print("evaluating on the " + eval_dir + " Set.")
-        TOP_COUNT = 6
-        # this data will contain rating but will be excluded for usage
-        eval_data = load_data(args.modalities, args.data_dir, eval_dir)
-        input_features_eval, ratings_eval = constructInput(eval_data, channels=args.modalities, window_size=window_size)
-        input_padded_eval, seq_lens_eval = padInput(input_features_eval, args.modalities, mod_dimension)
-        ratings_padded_eval = padRating(ratings_eval, max(seq_lens_eval))
-        model_path = os.path.join("../ModelSave/B3-MFN", "B3-MFN-VAL.pth")
-        checkpoint = load_checkpoint(model_path, args.device)
-        # load the testing parameters
-        args.modalities = checkpoint['modalities']
-        mod_dimension = checkpoint['mod_dimension']
-        window_size = checkpoint['window_size']
-        # construct model
-        model = MultiCNNTransformer(mods=args.modalities, dims=mod_dimension, device=args.device)
-        model.load_state_dict(checkpoint['model'])
-        ccc, pred, actuals = \
-            evaluateOnEval(input_padded_eval, ratings_padded_eval, seq_lens_eval,
-                           model, criterion, args)
-        stats = {'ccc': np.mean(ccc), 'ccc_std': np.std(ccc)}
-        logger.info('Evaluation\tCCC(std): {:2.5f}({:2.5f})'.\
-            format(stats['ccc'], stats['ccc_std']))
-        # zip and get the top ccc
-        # seq_ids = getSeqList(eval_data.seq_ids)
-        # seq_pred = dict(zip(seq_ids, pred))
-        # seq_actual = dict(zip(seq_ids, actuals))
-        # if args.eval:
-        #     seq_f = "127_6"
-        #     pred_f = seq_pred["127_6"]
-        #     actual_f = seq_actual["127_6"]
-        # else:
-        #     seq_f = "116_2"
-        #     pred_f = seq_pred["116_2"]
-        #     actual_f = seq_actual["116_2"]
-        # output_name = "B3MFN_" + seq_f
-        # with open("../pred_save/"+output_name+".csv", mode='w') as f:
-        #     f_writer = csv.writer(f, delimiter=',')
-        #     f_writer.writerow(['time', 'pred', 'actual'])
-        #     t = 0
-        #     for i in range(0, len(pred_f)):
-        #         f_writer.writerow([t, pred_f[i], actual_f[i]])
-        #         t = t + 1
-        return
 
     # construct model
     model = MultiCNNTransformer(mods=args.modalities, dims=mod_dimension, device=args.device)
@@ -634,7 +602,7 @@ if __name__ == "__main__":
                         help='input batch size for training (default: 10)')
     parser.add_argument('--split', type=int, default=1, metavar='N',
                         help='sections to split each video into (default: 1)')
-    parser.add_argument('--epochs', type=int, default=9999, metavar='N',
+    parser.add_argument('--epochs', type=int, default=700, metavar='N',
                         help='number of epochs to train (default: 1000)')
     parser.add_argument('--lr', type=float, default=1e-4, metavar='LR',
                         help='learning rate (default: 1e-6)')

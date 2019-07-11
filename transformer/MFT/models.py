@@ -79,7 +79,7 @@ class CNN(nn.Module):
         return x_conv_out
 
 class MultiCNNTransformer(nn.Module):
-    def __init__(self, mods, dims, fuse_embed_size=256, k=2,
+    def __init__(self, mods, dims, embed_dims, fuse_embed_size=256, k=2,
                  device=torch.device('cuda:0')):
         super(MultiCNNTransformer, self).__init__()
         # init
@@ -87,7 +87,7 @@ class MultiCNNTransformer(nn.Module):
         self.dims = dims
         self.CNN = dict()
         self.Highway = dict()
-        self.window_embed_size={'linguistic' : 300, 'emotient' : 20, 'acoustic' : 256, 'image' : 256}
+        self.window_embed_size=embed_dims
         total_embed_size = 0
         for mod in mods:
             self.CNN[mod] = CNN(dims[mod], self.window_embed_size[mod], k)

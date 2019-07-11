@@ -528,7 +528,7 @@ def main(args):
     # TODO: case for only making prediction on eval/test set
     if args.perf:
         headers = ["Model", "Combination", "VidID", "Set", "CCC"]
-        out = "MFT"
+        out = "MFT-New"
         firstTime = True
         for root, dirs, files in os.walk("../ModelSave/" + out):
             for name in files:
@@ -539,8 +539,9 @@ def main(args):
                         model_str = name.split(".")[0].split("-")[0]
                         mod_str = ''.join(sorted(mod_str))
                     else:
-                        mod_str = name.split(".")[0].split("-")[2]
-                        model_str = name.split(".")[0].split("-")[0] + "-" + name.split(".")[0].split("-")[1]
+                        mod_str = name.split(".")[0].split("-")[1]
+                        model_str = name.split(".")[0].split("-")[0] + "-" + name.split(".")[0].split("-")[2]
+                        window_embed_size={'linguistic' : 300, 'emotient' : 20, 'acoustic' : int(name.split(".")[0].split("-")[2]), 'image' : 256}
                         mod_str = ''.join(sorted(mod_str))
                     for eval_dir in ["Train", "Valid", "Test"]:
                         print("Evaluating " + model_str + " with " + mod_str + " performances on " + eval_dir)
@@ -552,7 +553,7 @@ def main(args):
                         input_features_eval, ratings_eval = constructInput(eval_data, channels=args.modalities, window_size=window_size)
                         input_padded_eval, seq_lens_eval = padInput(input_features_eval, args.modalities, mod_dimension)
                         ratings_padded_eval = padRating(ratings_eval, max(seq_lens_eval))
-                        model = MultiCNNTransformer(mods=args.modalities, dims=mod_dimension, device=args.device)
+                        model = MultiCNNTransformer(mods=args.modalities, dims=mod_dimension, embed_dims=window_embed_size, device=args.device)
                         model.load_state_dict(checkpoint['model'])
                         ccc, pred, actuals = \
                             evaluateOnEval(input_padded_eval, ratings_padded_eval, seq_lens_eval,
