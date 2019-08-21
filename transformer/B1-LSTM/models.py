@@ -143,8 +143,8 @@ class MultiLSTM(nn.Module):
     attn_len -- length of local attention window
     """
 
-    def __init__(self, window_embed_size, embed_dim=1024, h_dim=512,
-                 n_layers=2, attn_len=5, device=torch.device('cuda:0')):
+    def __init__(self, window_embed_size, embed_dim=512, h_dim=256,
+                 n_layers=1, attn_len=5, device=torch.device('cuda:0')):
         super(MultiLSTM, self).__init__()
 
         self.embed_dim = embed_dim
@@ -153,7 +153,7 @@ class MultiLSTM(nn.Module):
         self.attn_len = attn_len
 
         # Create raw-to-embed FC+Dropout layer
-        self.embed = nn.Sequential(nn.Dropout(0.3),
+        self.embed = nn.Sequential(nn.Dropout(0.4),
                                    nn.Linear(window_embed_size, embed_dim),
                                    nn.ReLU())
 
@@ -168,7 +168,7 @@ class MultiLSTM(nn.Module):
         # Regression network from LSTM hidden states to predicted valence
         self.decoder = nn.Sequential(nn.Linear(h_dim, embed_dim),
                                      nn.ReLU(),
-                                     nn.Dropout(0.3),
+                                     nn.Dropout(0.4),
                                      nn.Linear(embed_dim, 1))
         # Store module in specified device (CUDA/CPU)
         self.device = (device if torch.cuda.is_available() else
