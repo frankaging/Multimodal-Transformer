@@ -153,7 +153,7 @@ class MultiLSTM(nn.Module):
         self.attn_len = attn_len
 
         # Create raw-to-embed FC+Dropout layer
-        self.embed = nn.Sequential(nn.Dropout(0.3),
+        self.embed = nn.Sequential(nn.Dropout(0.1),
                                    nn.Linear(window_embed_size, embed_dim),
                                    nn.ReLU())
 
@@ -166,10 +166,9 @@ class MultiLSTM(nn.Module):
         self.lstm = nn.LSTM(embed_dim, h_dim,
                             n_layers, batch_first=True)
         # Regression network from LSTM hidden states to predicted valence
-        self.decoder = nn.Sequential(nn.Linear(h_dim, 128),
+        self.decoder = nn.Sequential(nn.Linear(h_dim, 256),
                                      nn.ReLU(),
-                                     nn.Dropout(0.3),
-                                     nn.Linear(128, 1))
+                                     nn.Linear(256, 1))
         # Store module in specified device (CUDA/CPU)
         self.device = (device if torch.cuda.is_available() else
                        torch.device('cpu'))
