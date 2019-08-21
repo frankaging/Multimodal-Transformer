@@ -242,8 +242,8 @@ def load_dataset(modalities, base_dir, subset,
                  base_rate=2.0, truncate=False, item_as_dict=False):
     """Helper function specifically for loading TAC-EA datasets."""
     dirs = {
-        'linguistic': os.path.join(base_dir, 'features', subset, 'linguistic-word-level'),
-        'linguistic_timer': os.path.join(base_dir, 'features', subset, 'linguistic-word-level'),
+        'linguistic': os.path.join(base_dir, 'features', subset, 'linguistic-word-level-bert'),
+        'linguistic_timer': os.path.join(base_dir, 'features', subset, 'linguistic-word-level-bert'),
         'emotient': os.path.join(base_dir, 'features', subset, 'emotient'),
         'emotient_timer': os.path.join(base_dir, 'features', subset, 'emotient'),
         'ratings' : os.path.join(base_dir, 'ratings', subset, 'observer_EWE'),
@@ -268,7 +268,7 @@ def load_dataset(modalities, base_dir, subset,
     rates = {'acoustic': 2, 'linguistic': 2, 'emotient': 30, 'emotient_timer': 30, 'ratings': 2, 'linguistic_timer' : 2, 'acoustic_timer' : 2}
     preprocess = {
         'linguistic_timer': lambda df : df.loc[:,'time-offset'],
-        'linguistic': lambda df : df.loc[:,'glove0':'glove299'],
+        'linguistic': lambda df : df.loc[:,'bert0':'bert767'],
         'emotient_timer': lambda df : df.loc[:,'Frametime'],
         'emotient': lambda df : df.loc[:,'AU1':'AU43'],
         'ratings' : lambda df : df.loc[:,'evaluatorWeightedEstimate'] / 100.0,
