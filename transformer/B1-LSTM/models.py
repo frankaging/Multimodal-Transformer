@@ -166,9 +166,10 @@ class MultiLSTM(nn.Module):
         self.lstm = nn.LSTM(embed_dim, h_dim,
                             n_layers, batch_first=True)
         # Regression network from LSTM hidden states to predicted valence
-        self.decoder = nn.Sequential(nn.Linear(h_dim, embed_dim),
+        self.decoder = nn.Sequential(nn.Linear(h_dim, 128),
                                      nn.ReLU(),
-                                     nn.Linear(embed_dim, 1))
+                                     nn.Dropout(0.3),
+                                     nn.Linear(128, 1))
         # Store module in specified device (CUDA/CPU)
         self.device = (device if torch.cuda.is_available() else
                        torch.device('cpu'))
