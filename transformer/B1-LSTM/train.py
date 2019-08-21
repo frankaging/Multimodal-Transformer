@@ -525,7 +525,7 @@ def main(args):
                    else torch.device('cpu'))
 
     args.modalities = ['linguistic']
-    mod_dimension = {'linguistic' : 768, 'emotient' : 20, 'acoustic' : 88, 'image' : 1000}
+    mod_dimension = {'linguistic' : 1024, 'emotient' : 20, 'acoustic' : 88, 'image' : 1000}
     window_size = {'linguistic' : 5, 'emotient' : 1, 'acoustic' : 1, 'image' : 1, 'ratings' : 5}
 
     # loss function define
@@ -644,7 +644,7 @@ if __name__ == "__main__":
                         help='input batch size for training (default: 10)')
     parser.add_argument('--split', type=int, default=1, metavar='N',
                         help='sections to split each video into (default: 1)')
-    parser.add_argument('--epochs', type=int, default=700, metavar='N',
+    parser.add_argument('--epochs', type=int, default=2000, metavar='N',
                         help='number of epochs to train (default: 1000)')
     parser.add_argument('--lr', type=float, default=1e-4, metavar='LR',
                         help='learning rate (default: 1e-6)')

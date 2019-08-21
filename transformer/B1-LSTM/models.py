@@ -85,7 +85,7 @@ class MultiCNNLSTM(nn.Module):
         self.dims = dims
         self.CNN = dict()
         self.Highway = dict()
-        self.window_embed_size={'linguistic' : 768, 'emotient' : 20, 'acoustic' : 256, 'image' : 256}
+        self.window_embed_size={'linguistic' : 1024, 'emotient' : 20, 'acoustic' : 256, 'image' : 256}
         total_embed_size = 0
         for mod in mods:
             self.CNN[mod] = CNN(dims[mod], self.window_embed_size[mod], k)
@@ -143,7 +143,7 @@ class MultiLSTM(nn.Module):
     attn_len -- length of local attention window
     """
 
-    def __init__(self, window_embed_size, embed_dim=512, h_dim=256,
+    def __init__(self, window_embed_size, embed_dim=1024, h_dim=512,
                  n_layers=1, attn_len=5, device=torch.device('cuda:0')):
         super(MultiLSTM, self).__init__()
 
