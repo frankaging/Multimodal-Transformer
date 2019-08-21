@@ -143,7 +143,7 @@ class MultiLSTM(nn.Module):
     attn_len -- length of local attention window
     """
 
-    def __init__(self, window_embed_size, embed_dim=128, h_dim=256,
+    def __init__(self, window_embed_size, embed_dim=512, h_dim=256,
                  n_layers=1, attn_len=5, device=torch.device('cuda:0')):
         super(MultiLSTM, self).__init__()
 
@@ -153,7 +153,7 @@ class MultiLSTM(nn.Module):
         self.attn_len = attn_len
 
         # Create raw-to-embed FC+Dropout layer
-        self.embed = nn.Sequential(nn.Dropout(0.1),
+        self.embed = nn.Sequential(nn.Dropout(0.3),
                                    nn.Linear(window_embed_size, embed_dim),
                                    nn.ReLU())
 
