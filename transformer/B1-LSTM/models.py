@@ -144,7 +144,7 @@ class MultiLSTM(nn.Module):
     """
 
     def __init__(self, window_embed_size, embed_dim=1024, h_dim=512,
-                 n_layers=1, attn_len=5, device=torch.device('cuda:0')):
+                 n_layers=2, attn_len=5, device=torch.device('cuda:0')):
         super(MultiLSTM, self).__init__()
 
         self.embed_dim = embed_dim
