@@ -268,7 +268,7 @@ def load_dataset(modalities, base_dir, subset,
     rates = {'acoustic': 2, 'linguistic': 2, 'emotient': 30, 'emotient_timer': 30, 'ratings': 2, 'linguistic_timer' : 2, 'acoustic_timer' : 2}
     preprocess = {
         'linguistic_timer': lambda df : df.loc[:,'time-offset'],
-        'linguistic': lambda df : df.loc[:,'bert0':'bert767'],
+        'linguistic': lambda df : df.loc[:,'bert0':'bert1023'],
         'emotient_timer': lambda df : df.loc[:,'Frametime'],
         'emotient': lambda df : df.loc[:,'AU1':'AU43'],
         'ratings' : lambda df : df.loc[:,'evaluatorWeightedEstimate'] / 100.0,
